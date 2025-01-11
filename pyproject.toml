@@ -13,9 +13,10 @@ develop = [
     "pytest>=7.0",
     "polyfactory>=2.18",
     "pytest-cov>=6.0",
-    "python-dotenv>=1.0",
+    "python-dotenv==1.*",
     "ruff>=0.8",
     "uv>=0.5.15",
+    "pydantic-settings==2.*",
 ]
 
 api_get_active_searches = [
@@ -214,3 +215,8 @@ users_activate = [
 [tool.ruff]
 line-length = 120
 format.quote-style = 'single'
+
+[tool.coverage.run]
+omit = [
+  "*/tests/*"
+]

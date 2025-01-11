@@ -1,25 +1,17 @@
 import base64
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
-import pytest
-from telegram.ext import ExtBot
 from telegram import Bot
+from telegram.ext import ExtBot
 
-from tests.common import emulated_get_secrets, get_config
-
-
-@pytest.fixture
-def autopatch_secrets(common_patches):
-    with patch('send_debug_to_admin.main.get_secrets', emulated_get_secrets):
-        yield
+from tests.common import get_config, get_event_with_data
 
 
-def test_main_positive(autopatch_secrets):
+def test_main_positive():
     from send_debug_to_admin.main import main
 
     message_text = 'some text'
-    data = base64.b64encode(str({'data': {'message': message_text}}).encode())
-    event = {'data': data}
+    event = get_event_with_data(message_text)
 
     with (
         patch.object(ExtBot, 'send_message') as mock_send_message,
@@ -32,7 +24,7 @@ def test_main_positive(autopatch_secrets):
         )
 
 
-def test_main_with_exception(autopatch_secrets):
+def test_main_with_exception():
     from send_debug_to_admin.main import main
 
     message_text = 'some text'

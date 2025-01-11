@@ -2,29 +2,25 @@
 and saves into PSQL if there are any updates"""
 
 import ast
-import json
-import re
 import base64
-import time
-import logging
-from datetime import datetime, timedelta, timezone
 import copy
-import urllib.request
-import requests
+import json
+import logging
 import random
+import re
+import time
+import urllib.request
+from datetime import datetime, timedelta, timezone
 
+import google.auth.transport.requests
+import google.cloud.logging
+import google.oauth2.id_token
+import requests
 import sqlalchemy
 from bs4 import BeautifulSoup, SoupStrainer  # noqa
 from geopy.geocoders import Nominatim
+from google.cloud import pubsub_v1, secretmanager, storage
 from yandex_geocoder import Client, exceptions
-
-from google.cloud import secretmanager
-from google.cloud import storage
-from google.cloud import pubsub_v1
-import google.cloud.logging
-import google.auth.transport.requests
-import google.oauth2.id_token
-
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

@@ -4,21 +4,20 @@ The current script checks Telegram authentication and retrieves user's key data 
 # TODO - add functions descriptions
 # TODO – add functions typing hints
 
+import datetime
+import hashlib
+import hmac
 import json
 import logging
 import re
-import datetime
-
 import urllib.request
 from urllib.parse import unquote
-import hmac
-import hashlib
+
+import functions_framework
+import google.cloud.logging
 import psycopg2
 from bs4 import BeautifulSoup
-
-import google.cloud.logging
 from google.cloud import secretmanager
-import functions_framework
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

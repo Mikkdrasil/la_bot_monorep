@@ -1,21 +1,19 @@
+import asyncio
 import base64
-import urllib.request
 import datetime
 import logging
-import requests
 import re
 import urllib.parse
+import urllib.request
 from time import sleep
 
-from bs4 import BeautifulSoup
-import psycopg2
-
-import asyncio
-from telegram import ReplyKeyboardMarkup, Bot
-from telegram.ext import ContextTypes, Application
-
-from google.cloud import secretmanager
 import google.cloud.logging
+import psycopg2
+import requests
+from bs4 import BeautifulSoup
+from google.cloud import secretmanager
+from telegram import Bot, ReplyKeyboardMarkup
+from telegram.ext import Application, ContextTypes
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

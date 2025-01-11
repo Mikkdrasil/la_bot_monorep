@@ -1,11 +1,9 @@
-import logging
-import sqlalchemy
 import json
+import logging
 import urllib.request
 
-from google.cloud import secretmanager
-from google.cloud import pubsub_v1
-
+import sqlalchemy
+from google.cloud import pubsub_v1, secretmanager
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

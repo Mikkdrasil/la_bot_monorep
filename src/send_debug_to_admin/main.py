@@ -1,16 +1,15 @@
 """Script send the Debug messages to Admin via special Debug Bot in telegram https://t.me/la_test_1_bot
 To receive notifications one should be marked as Admin in PSQL"""
 
-import datetime
+import asyncio
 import base64
+import datetime
 import logging
 import urllib.request
 
-import asyncio
-from telegram.ext import ContextTypes, Application
-
-from google.cloud import secretmanager
 import google.cloud.logging
+from google.cloud import secretmanager
+from telegram.ext import Application, ContextTypes
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

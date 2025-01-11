@@ -1,21 +1,20 @@
 import json
-import re
 import logging
-from typing import Union, Dict
+import re
 from datetime import datetime
-from dateutil import relativedelta
+from typing import Dict, Union
 
-from natasha import Segmenter, NewsEmbedding, NewsNERTagger, Doc
-
-import google.cloud.logging
 import functions_framework
-
+import google.cloud.logging
+from dateutil import relativedelta
+from flask import Request
+from natasha import Doc, NewsEmbedding, NewsNERTagger, Segmenter
 
 log_client = google.cloud.logging.Client()
 log_client.setup_logging()
 
 
-def get_requested_title(request: Union[Dict, None]) -> tuple:
+def get_requested_title(request: Request) -> tuple[str, str]:
     """gets the title from the incoming request"""
 
     # for the case when request contains json
@@ -1451,7 +1450,7 @@ def recognize_title(line: str, reco_type: str) -> Union[Dict, None]:
 
 
 @functions_framework.http
-def main(request):
+def main(request: Request) -> str:
     """entry point to http-invoked cloud function"""
 
     title, reco_type = get_requested_title(request)

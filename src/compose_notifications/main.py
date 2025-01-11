@@ -1,21 +1,18 @@
 """compose and save all the text / location messages, then initiate sending via pub-sub"""
 
-import base64
-import urllib.request
-
 import ast
-import re
+import base64
 import datetime
 import json
 import logging
 import math
 import random
+import re
+import urllib.request
 
-import sqlalchemy
-
-from google.cloud import secretmanager
-from google.cloud import pubsub_v1
 import google.cloud.logging
+import sqlalchemy
+from google.cloud import pubsub_v1, secretmanager
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

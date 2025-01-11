@@ -2,31 +2,30 @@
 
 """receives telegram messages from users, acts accordingly and sends back the reply"""
 
+import asyncio
 import datetime
-import re
+import hashlib
 import json
 import logging
 import math
-import psycopg2
-import urllib.request
+import re
 import urllib.parse
-import requests
-import hashlib
-from typing import Union, Dict
+import urllib.request
+from typing import Dict, Union
 
-from google.cloud import secretmanager, pubsub_v1
 import google.cloud.logging
-
-import asyncio
+import psycopg2
+import requests
+from google.cloud import pubsub_v1, secretmanager
 from telegram import (
-    ReplyKeyboardMarkup,
-    KeyboardButton,
     Bot,
-    Update,
-    ReplyKeyboardRemove,
     InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
 )
-from telegram.ext import ContextTypes, Application
+from telegram.ext import Application, ContextTypes
 
 publisher = pubsub_v1.PublisherClient()
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'

@@ -92,3 +92,6 @@ Format code: `make lint`
 
 Update nested "requirements.txt" files: `make requirements`
 
+After changing `pyproject.toml` run `uv lock` to update lockfile.
+
+Run tests with postgres database in docker container: `make ci-test`

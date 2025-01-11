@@ -1,18 +1,17 @@
 """Function acts as API for the App designed to support LizaAlert Group of Phone Calls.
 The current script retrieves an actual list active searches"""
 
+import datetime
 import json
 import logging
 import re
-import datetime
-
 import urllib.request
+
+import functions_framework
+import google.cloud.logging
 import psycopg2
 from bs4 import BeautifulSoup
-
-import google.cloud.logging
 from google.cloud import secretmanager
-import functions_framework
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

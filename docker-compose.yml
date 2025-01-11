@@ -1,0 +1,24 @@
+
+services:
+  bot:
+    env_file: &env_file .env.example
+    build:
+      context: .
+    working_dir: /opt/bot
+    command:
+      - sleep
+      - infinity
+    depends_on:
+      - postgres
+    volumes:
+      - uv_cache_dir:/root/.cache/uv
+  postgres:
+    env_file: *env_file
+    image: postgres:15-alpine
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+volumes:
+  pg_data:
+  uv_cache_dir:

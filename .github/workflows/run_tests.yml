@@ -14,23 +14,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Fetch all history for all branches
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-
-      - name: Install dependencies
+      - name: Build containers and run tests
         run: |
-          pip install uv
-          make venv
-      - name: Run pytest
-        if: success()
-        run: |
-          export PYTHONPATH=src
-          cp .env.example .env
-          make test
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          make ci-test

@@ -4,9 +4,7 @@ import logging
 import urllib.request
 
 import sqlalchemy
-
-from google.cloud import bigquery
-from google.cloud import secretmanager
+from google.cloud import bigquery, secretmanager
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)
@@ -56,7 +54,7 @@ def sql_connect():
     return pool
 
 
-def archive_notif_by_user(client):
+def archive_notif_by_user(client: bigquery.Client):
     """archive (move) data from notif_by_user in psql into BQ"""
 
     # 1. Get the initial row count of bq table
@@ -180,7 +178,7 @@ def archive_notif_by_user(client):
         logging.info(f'resulting rows in psql: {new_psql_count}')
 
 
-def save_sql_stat_table_sizes(client):
+def save_sql_stat_table_sizes(client: bigquery.Client):
     """save current psql parameters: sizes of biggest tables"""
 
     query = '''

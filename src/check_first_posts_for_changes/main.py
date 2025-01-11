@@ -4,21 +4,19 @@
 3. checks active searches' visibility (accessible for everyone, restricted to a certain group or permanently deleted).
 Updates are either saved in PSQL or send via pub/sub to other scripts"""
 
-import requests
 import datetime
-import re
+import hashlib
 import json
 import logging
-import hashlib
+import re
 import urllib.request
 
-import sqlalchemy  # idea for optimization – to move to psycopg2
-
-from google.cloud import secretmanager
-from google.cloud import pubsub_v1
-import google.cloud.logging
 import google.auth.transport.requests
+import google.cloud.logging
 import google.oauth2.id_token
+import requests
+import sqlalchemy  # idea for optimization – to move to psycopg2
+from google.cloud import pubsub_v1, secretmanager
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

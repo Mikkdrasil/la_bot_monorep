@@ -1,19 +1,18 @@
 """Send the prepared notifications to users (text and location) via Telegram"""
 
 import ast
-import time
-import datetime
 import base64
-import logging
+import datetime
 import json
-import psycopg2
-import urllib.request
-import requests
+import logging
 import random
+import time
+import urllib.request
 
-from google.cloud import secretmanager
-from google.cloud import pubsub_v1
 import google.cloud.logging
+import psycopg2
+import requests
+from google.cloud import pubsub_v1, secretmanager
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

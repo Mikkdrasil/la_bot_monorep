@@ -1,13 +1,12 @@
-import json
 import datetime
-import requests
+import json
 import logging
 import urllib.request
 
-from bs4 import BeautifulSoup, SoupStrainer  # noqa
-
-from google.cloud import pubsub_v1
 import google.cloud.logging
+import requests
+from bs4 import BeautifulSoup, SoupStrainer  # noqa
+from google.cloud import pubsub_v1
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

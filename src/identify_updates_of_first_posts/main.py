@@ -1,24 +1,22 @@
 """Check if the first post of the search was updated in terms of field trips and coordinates change.
 Result to be recorded into Change_log and triggered another script identify_updates_of_folders."""
 
-import datetime
+import ast
 import base64
+import copy
+import datetime
+import difflib
 import json
 import logging
-import ast
-import re
-import copy
-import requests
-import urllib.request
-import difflib
 import random
+import re
+import urllib.request
 
+import google.cloud.logging
+import requests
 import sqlalchemy
 from bs4 import BeautifulSoup, NavigableString
-
-from google.cloud import pubsub_v1
-from google.cloud import secretmanager
-import google.cloud.logging
+from google.cloud import pubsub_v1, secretmanager
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)

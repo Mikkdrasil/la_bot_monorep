@@ -1,0 +1,11 @@
+*.pyc
+.env
+.vscode/*
+!.vscode/launch.template.json
+!.vscode/settings.template.json
+build/
+.coverage
+.idea/
+venv/
+.sandbox/
+.DS_Store

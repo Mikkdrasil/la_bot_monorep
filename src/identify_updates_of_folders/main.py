@@ -1,18 +1,16 @@
 """Parses the folder-tree on the forum, checking the last update time. Collects the list of leaf-level folders
 which contain updates – and makes a pub/sub call for other script to parse content of these folders"""
 
-import base64
 import ast
+import base64
 import json
-import requests
 import logging
 import urllib.request
 
-from bs4 import BeautifulSoup, SoupStrainer  # noqa
-
-from google.cloud import pubsub_v1
-from google.cloud import storage
 import google.cloud.logging
+import requests
+from bs4 import BeautifulSoup, SoupStrainer  # noqa
+from google.cloud import pubsub_v1, storage
 
 url = 'http://metadata.google.internal/computeMetadata/v1/project/project-id'
 req = urllib.request.Request(url)
