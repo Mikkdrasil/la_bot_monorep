@@ -2,8 +2,7 @@ name: Deploy-GCF-Send-Debug-To-Admin
 env:
   FILE_NAME: send_debug_to_admin # UPD HERE!
 
-on:
-  workflow_dispatch
+on: workflow_dispatch
     # branches : [main, test]
 
     # paths:
