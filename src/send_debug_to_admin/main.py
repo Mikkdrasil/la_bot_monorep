@@ -11,6 +11,9 @@ from telegram.ext import Application, ContextTypes
 
 from _dependencies.commons import get_app_config, setup_google_logging
 
+from ._utils.foo import test_func
+
+test_func()
 setup_google_logging()
 
 logging.getLogger('telegram.vendor.ptb_urllib3.urllib3').setLevel(logging.ERROR)
