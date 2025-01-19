@@ -3,12 +3,13 @@ env:
   FILE_NAME: send_debug_to_admin # UPD HERE!
 
 on:
-  push:
-    branches : [main, test]
-    paths:
-      - 'src/_dependencies/*'
-      - 'src/send_debug_to_admin/*' # UPD HERE!
-      - '.github/workflows/deploy_send_debug_to_admin.yml' # UPD HERE!
+  workflow_dispatch
+    # branches : [main, test]
+
+    # paths:
+    #   - 'src/_dependencies/*'
+    #   - 'src/send_debug_to_admin/*' # UPD HERE!
+    #   - '.github/workflows/deploy_send_debug_to_admin.yml' # UPD HERE!
 
 jobs:
   deploy_function:
