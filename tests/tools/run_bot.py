@@ -9,7 +9,7 @@ from pyannotate_runtime import collect_types
 from telegram import Bot
 from telegram.ext import Updater
 
-from _dependencies.commons import AppConfig, Topics
+from _dependencies.commons import AppConfig, Topics, sql_connect_by_psycopg2
 from communicate.main import process_update
 from tests.common import topic_to_receiver_function
 
@@ -25,7 +25,8 @@ async def main_bot() -> None:
         while True:
             update = await queue.get()
             print(update)
-            process_update(update)
+            with sql_connect_by_psycopg2() as conn_psy, conn_psy.cursor() as cur:
+                process_update(cur, update)
 
 
 @lru_cache

@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import logging
@@ -10,15 +11,23 @@ import requests
 from psycopg2.extensions import cursor
 from requests.models import Response
 from telegram import CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, TelegramObject
+from telegram.ext import Application, ContextTypes
 
-from _dependencies.commons import Topics, publish_to_pubsub
+from _dependencies.commons import Topics, get_app_config, publish_to_pubsub
 from _dependencies.misc import age_writer, notify_admin, process_sending_message_async, time_counter_since_search_start
 from communicate._utils.buttons import AllButtons, search_button_row_ikb
 from communicate._utils.database import (
     check_if_user_has_no_regions,
     check_saved_topic_types,
+    compose_msg_on_all_last_searches,
     delete_topic_type,
+    distance_to_search,
+    generate_yandex_maps_place_link,
+    get_last_user_inline_dialogue,
     record_topic_type,
+    save_bot_reply_to_user,
+    save_last_user_inline_dialogue,
+    save_user_coordinates,
     save_user_pref_topic_type,
     set_search_follow_mode,
 )
@@ -793,3 +802,496 @@ def compose_msg_on_all_last_searches_ikb(cur: cursor, region: int, user_id: int)
             f'{pre_url}{search.topic_id}',
         )
     return ikb
+
+
+def send_message_to_api(bot_token, user_id, message, params):
+    """send message directly to Telegram API w/o any wrappers ar libraries"""
+
+    try:
+        parse_mode = ''
+        disable_web_page_preview = ''
+        reply_markup = ''
+        if params:
+            if 'parse_mode' in params.keys():
+                parse_mode = f'&parse_mode={params["parse_mode"]}'
+            if 'disable_web_page_preview' in params.keys():
+                disable_web_page_preview = f'&disable_web_page_preview={params["disable_web_page_preview"]}'
+            if 'reply_markup' in params.keys():
+                rep_as_str = str(json.dumps(params['reply_markup']))
+                reply_markup = f'&reply_markup={urllib.parse.quote(rep_as_str)}'
+        message_encoded = f'&text={urllib.parse.quote(message)}'
+
+        request_text = (
+            f'https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={user_id}'
+            f'{message_encoded}{parse_mode}{disable_web_page_preview}{reply_markup}'
+        )
+
+        with requests.Session() as session:
+            response = session.get(request_text)
+            logging.info(str(response))
+
+    except Exception as e:
+        logging.exception(e)
+        logging.info('Error in getting response from Telegram')
+        response = None
+
+    result = process_response_of_api_call(user_id, response)
+
+    return result
+
+
+def api_callback_edit_inline_keyboard(bot_token: str, callback_query: dict, reply_markup: dict, user_id: str) -> str:
+    """send a notification when inline button is pushed directly to Telegram API w/o any wrappers ar libraries"""
+    if reply_markup and not isinstance(reply_markup, dict):
+        reply_markup_dict = reply_markup.to_dict()
+
+    params = {
+        'chat_id': callback_query['message']['chat']['id'],
+        'message_id': callback_query['message']['message_id'],
+        'text': callback_query['message']['text'],
+        'reply_markup': reply_markup_dict,
+    }
+
+    response = make_api_call('editMessageText', bot_token, params, 'api_callback_edit_inline_keyboard')
+    logging.info(f'After make_api_call(editMessageText): {response.json()=}')
+    result = process_response_of_api_call(user_id, response)
+    return result
+
+
+def get_last_bot_message_id(response: requests.Response) -> int:
+    """Get the message id of the bot's message that was just sent"""
+
+    try:
+        message_id = response.json()['result']['message_id']
+
+    except Exception as e:  # noqa
+        message_id = None
+
+    return message_id
+
+
+def inline_processing(cur, response, params) -> None:
+    """process the response got from inline buttons interactions"""
+
+    if not response or 'chat_id' not in params.keys():
+        return None
+
+    chat_id = params['chat_id']
+    sent_message_id = get_last_bot_message_id(response)
+
+    if 'reply_markup' in params.keys() and 'inline_keyboard' in params['reply_markup'].keys():
+        prev_message_id = get_last_user_inline_dialogue(cur, chat_id)
+        logging.info(f'{prev_message_id=}')
+        save_last_user_inline_dialogue(cur, chat_id, sent_message_id)
+
+    return None
+
+
+async def leave_chat_async(context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.leave_chat(chat_id=context.job.chat_id)
+
+    return None
+
+
+async def prepare_message_for_leave_chat_async(user_id):
+    # TODO DOUBLE
+    bot_token = get_app_config().bot_api_token__prod
+    application = Application.builder().token(bot_token).build()
+    job_queue = application.job_queue
+    job_queue.run_once(leave_chat_async, 0, chat_id=user_id)
+
+    async with application:
+        await application.initialize()
+        await application.start()
+        await application.stop()
+        await application.shutdown()
+
+    return 'ok'
+
+
+def process_leaving_chat_async(user_id) -> None:
+    asyncio.run(prepare_message_for_leave_chat_async(user_id))
+
+    return None
+
+
+def compose_msg_on_active_searches_in_one_reg_ikb(
+    cur: cursor, region: int, user_data: Tuple[str, str], user_id: int
+) -> List:
+    """Compose a part of message on the list of active searches in the given region with relation to user's coords"""
+    # issue#425 it is ikb variant of the above function, returns data formated for inline keyboard
+    # 1st element of returned list is general info and should be popped
+    # rest elements are searches to be showed as inline buttons
+
+    pre_url = 'https://lizaalert.org/forum/viewtopic.php?t='
+    ikb = []
+
+    cur.execute(
+        """SELECT s2.*, upswl.search_following_mode FROM 
+            (SELECT s.search_forum_num, s.search_start_time, s.display_name, sa.latitude, sa.longitude, 
+            s.topic_type, s.family_name, s.age 
+            FROM searches s 
+            LEFT JOIN search_coordinates sa ON s.search_forum_num = sa.search_id 
+            WHERE (s.status='Ищем' OR s.status='Возобновлен') 
+                AND s.forum_folder_id=%(region)s ORDER BY s.search_start_time DESC) s2 
+        LEFT JOIN search_health_check shc ON s2.search_forum_num=shc.search_forum_num
+        LEFT JOIN user_pref_search_whitelist upswl ON upswl.search_id=s2.search_forum_num and upswl.user_id=%(user_id)s
+        WHERE (shc.status is NULL or shc.status='ok' or shc.status='regular') 
+        ORDER BY s2.search_start_time DESC;""",
+        {'region': region, 'user_id': user_id},
+    )
+    searches_list = cur.fetchall()
+
+    user_lat = None
+    user_lon = None
+
+    if user_data:
+        user_lat = user_data[0]
+        user_lon = user_data[1]
+
+    for line in searches_list:
+        search = SearchSummary()
+        (
+            search.topic_id,
+            search.start_time,
+            search.display_name,
+            search_lat,
+            search_lon,
+            search.topic_type,
+            search.name,
+            search.age,
+            search_following_mode,
+        ) = list(line)
+
+        if time_counter_since_search_start(search.start_time)[1] >= 60:
+            continue
+
+        time_since_start = time_counter_since_search_start(search.start_time)[0]
+
+        if user_lat and search_lat:
+            dist = distance_to_search(search_lat, search_lon, user_lat, user_lon, False)
+            dist_and_dir = f' {dist[1]} {dist[0]} км'
+        else:
+            dist_and_dir = ''
+
+        if not search.display_name:
+            age_string = f' {age_writer(search.age)}' if search.age != 0 else ''
+            search.display_name = f'{search.name}{age_string}'
+
+        ikb += search_button_row_ikb(
+            search_following_mode,
+            f'{time_since_start}{dist_and_dir}',
+            search.topic_id,
+            search.display_name,
+            f'{pre_url}{search.topic_id}',
+        )
+    return ikb
+
+
+def compose_full_message_on_list_of_searches_ikb(
+    cur: cursor, list_type: str, user_id: int, region: int, region_name: str
+):  # issue#425
+    """Compose a Final message on the list of searches in the given region"""
+    # issue#425 This variant of the above function returns data in format used to compose inline keyboard
+    # 1st element is caption
+    # rest elements are searches in format to be showed as inline buttons
+
+    ikb = []
+
+    cur.execute('SELECT latitude, longitude FROM user_coordinates WHERE user_id=%s LIMIT 1;', (user_id,))
+
+    user_data = cur.fetchone()
+
+    url = f'https://lizaalert.org/forum/viewforum.php?f={region}'
+    # combine the list of last 20 searches
+    if list_type == 'all':
+        ikb += compose_msg_on_all_last_searches_ikb(cur, region, user_id)
+        logging.info('ikb += compose_msg_on_all_last_searches_ikb == ' + str(ikb))
+
+        if len(ikb) > 0:
+            msg = f'Посл. 20 поисков в {region_name}'
+            ikb.insert(0, [{'text': msg, 'url': url}])
+        else:
+            msg = (
+                'Не получается отобразить последние поиски в разделе '
+                '<a href="https://lizaalert.org/forum/viewforum.php?f='
+                + str(region)
+                + '">'
+                + region_name
+                + '</a>, что-то пошло не так, простите. Напишите об этом разработчику '
+                'в <a href="https://t.me/joinchat/2J-kV0GaCgwxY2Ni">Специальном Чате '
+                'в телеграм</a>, пожалуйста.'
+            )
+            ikb = [[{'text': msg, 'url': url}]]
+
+    # Combine the list of the latest active searches
+    else:
+        ikb += compose_msg_on_active_searches_in_one_reg_ikb(cur, region, user_data, user_id)
+        logging.info(f'ikb += compose_msg_on_active_searches_in_one_reg_ikb == {ikb}; ({region=})')
+
+        if len(ikb) > 0:
+            msg = f'Акт. поиски за 60 дней в {region_name}'
+            ikb.insert(0, [{'text': msg, 'url': url}])
+        else:
+            msg = f'Нет акт. поисков за 60 дней в {region_name}'
+            ikb = [[{'text': msg, 'url': url}]]
+
+    return ikb
+
+
+def compose_msg_on_active_searches_in_one_reg(cur: cursor, region: int, user_data) -> str:
+    """Compose a part of message on the list of active searches in the given region with relation to user's coords"""
+
+    pre_url = 'https://lizaalert.org/forum/viewtopic.php?t='
+    text = ''
+
+    cur.execute(
+        """SELECT s2.* FROM 
+            (SELECT s.search_forum_num, s.search_start_time, s.display_name, sa.latitude, sa.longitude, 
+            s.topic_type, s.family_name, s.age 
+            FROM searches s 
+            LEFT JOIN search_coordinates sa ON s.search_forum_num = sa.search_id 
+            WHERE (s.status='Ищем' OR s.status='Возобновлен') 
+                AND s.forum_folder_id=%s ORDER BY s.search_start_time DESC) s2 
+        LEFT JOIN search_health_check shc ON s2.search_forum_num=shc.search_forum_num
+        WHERE (shc.status is NULL or shc.status='ok' or shc.status='regular') 
+        ORDER BY s2.search_start_time DESC;""",
+        (region,),
+    )
+    searches_list = cur.fetchall()
+
+    user_lat = None
+    user_lon = None
+
+    if user_data:
+        user_lat = user_data[0]
+        user_lon = user_data[1]
+
+    for line in searches_list:
+        search = SearchSummary()
+        (
+            search.topic_id,
+            search.start_time,
+            search.display_name,
+            search_lat,
+            search_lon,
+            search.topic_type,
+            search.name,
+            search.age,
+        ) = list(line)
+
+        if time_counter_since_search_start(search.start_time)[1] >= 60:
+            continue
+
+        time_since_start = time_counter_since_search_start(search.start_time)[0]
+
+        if user_lat and search_lat:
+            dist = distance_to_search(search_lat, search_lon, user_lat, user_lon)
+            dist_and_dir = f' {dist[1]} {dist[0]} км'
+        else:
+            dist_and_dir = ''
+
+        if not search.display_name:
+            age_string = f' {age_writer(search.age)}' if search.age != 0 else ''
+            search.display_name = f'{search.name}{age_string}'
+
+        text += f'{time_since_start}{dist_and_dir} <a href="{pre_url}{search.topic_id}">{search.display_name}</a>\n'
+
+    return text
+
+
+def compose_full_message_on_list_of_searches(
+    cur: cursor, list_type: str, user_id: int, region: int, region_name: str
+) -> str:
+    """Compose a Final message on the list of searches in the given region"""
+
+    msg = ''
+
+    cur.execute('SELECT latitude, longitude FROM user_coordinates WHERE user_id=%s LIMIT 1;', (user_id,))
+
+    user_data = cur.fetchone()
+
+    # combine the list of last 20 searches
+    if list_type == 'all':
+        msg += compose_msg_on_all_last_searches(cur, region)
+
+        if msg:
+            msg = (
+                'Последние 20 поисков в разделе <a href="https://lizaalert.org/forum/viewforum.php?f='
+                + str(region)
+                + '">'
+                + region_name
+                + '</a>:\n'
+                + msg
+            )
+
+        else:
+            msg = (
+                'Не получается отобразить последние поиски в разделе '
+                '<a href="https://lizaalert.org/forum/viewforum.php?f='
+                + str(region)
+                + '">'
+                + region_name
+                + '</a>, что-то пошло не так, простите. Напишите об этом разработчику '
+                'в <a href="https://t.me/joinchat/2J-kV0GaCgwxY2Ni">Специальном Чате '
+                'в телеграм</a>, пожалуйста.'
+            )
+
+    # Combine the list of the latest active searches
+    else:
+        msg += compose_msg_on_active_searches_in_one_reg(cur, region, user_data)
+
+        if msg:
+            msg = (
+                'Актуальные поиски за 60 дней в разделе <a href="https://lizaalert.org/forum/viewforum.php?f='
+                + str(region)
+                + '">'
+                + region_name
+                + '</a>:\n'
+                + msg
+            )
+
+        else:
+            msg = (
+                'В разделе <a href="https://lizaalert.org/forum/viewforum.php?f='
+                + str(region)
+                + '">'
+                + region_name
+                + '</a> все поиски за последние 60 дней завершены.'
+            )
+
+    return msg
+
+
+def process_unneeded_messages(
+    update, user_id, timer_changed, photo, document, voice, sticker, channel_type, contact, inline_query
+):
+    """process messages which are not a part of designed dialogue"""
+
+    # CASE 2 – when user changed auto-delete setting in the bot
+    if timer_changed:
+        logging.info('user changed auto-delete timer settings')
+
+    # CASE 3 – when user sends a PHOTO or attached DOCUMENT or VOICE message
+    elif photo or document or voice or sticker:
+        logging.debug('user sends photos to bot')
+
+        bot_message = (
+            'Спасибо, интересное! Однако, бот работает только с текстовыми командами. '
+            'Пожалуйста, воспользуйтесь текстовыми кнопками бота, находящимися на '
+            'месте обычной клавиатуры телеграм.'
+        )
+        data = {'text': bot_message}
+        process_sending_message_async(user_id=user_id, data=data)
+
+    # CASE 4 – when some Channel writes to bot
+    elif channel_type and user_id < 0:
+        notify_admin('[comm]: INFO: CHANNEL sends messages to bot!')
+
+        try:
+            process_leaving_chat_async(user_id)
+            notify_admin(f'[comm]: INFO: we have left the CHANNEL {user_id}')
+
+        except Exception as e:
+            logging.info(f'[comm]: Leaving channel was not successful: {user_id}')
+            logging.exception(e)
+            notify_admin(f'[comm]: Leaving channel was not successful: {user_id}')
+
+    # CASE 5 – when user sends Contact
+    elif contact:
+        bot_message = (
+            'Спасибо, буду знать. Вот только бот не работает с контактами и отвечает '
+            'только на определенные текстовые команды.'
+        )
+        data = {'text': bot_message}
+        process_sending_message_async(user_id=user_id, data=data)
+
+    # CASE 6 – when user mentions bot as @LizaAlert_Searcher_Bot in another telegram chat. Bot should do nothing
+    elif inline_query:
+        notify_admin('[comm]: User mentioned bot in some chats')
+        logging.info(f'bot was mentioned in other chats: {update}')
+
+    return None
+
+
+def get_coordinates_from_string(got_message: str, lat_placeholder, lon_placeholder) -> Tuple[float, float]:
+    """gets coordinates from string"""
+
+    user_latitude, user_longitude = None, None
+    # Check if user input is in format of coordinates
+    # noinspection PyBroadException
+    try:
+        numbers = [float(s) for s in re.findall(r'-?\d+\.?\d*', got_message)]
+        if numbers and len(numbers) > 1 and 30 < numbers[0] < 80 and 10 < numbers[1] < 190:
+            user_latitude = numbers[0]
+            user_longitude = numbers[1]
+    except Exception:
+        logging.info(f'manual coordinates were not identified from string {got_message}')
+
+    if not (user_latitude and user_longitude):
+        user_latitude = lat_placeholder
+        user_longitude = lon_placeholder
+
+    return user_latitude, user_longitude
+
+
+def process_user_coordinates(
+    cur: cursor,
+    user_id: int,
+    user_latitude: float,
+    user_longitude: float,
+    b_coords_check: str,
+    b_coords_del: str,
+    b_back_to_start: str,
+    bot_request_aft_usr_msg: str,
+) -> Optional[Any]:
+    """process coordinates which user sent to bot"""
+
+    save_user_coordinates(cur, user_id, user_latitude, user_longitude)
+
+    bot_message = 'Ваши "домашние координаты" сохранены:\n'
+    bot_message += generate_yandex_maps_place_link(user_latitude, user_longitude, 'coords')
+    bot_message += (
+        '\nТеперь для всех поисков, где удастся распознать координаты штаба или '
+        'населенного пункта, будет указываться направление и расстояние по '
+        'прямой от ваших "домашних координат".'
+    )
+
+    keyboard_settings = [[b_coords_check], [b_coords_del], [b_back_to_start]]
+    reply_markup = ReplyKeyboardMarkup(keyboard_settings, resize_keyboard=True)
+
+    data = {'text': bot_message, 'reply_markup': reply_markup, 'parse_mode': 'HTML', 'disable_web_page_preview': True}
+    process_sending_message_async(user_id=user_id, data=data)
+    # msg_sent_by_specific_code = True
+
+    # saving the last message from bot
+    if not bot_request_aft_usr_msg:
+        bot_request_aft_usr_msg = 'not_defined'
+
+    try:
+        cur.execute("""DELETE FROM msg_from_bot WHERE user_id=%s;""", (user_id,))
+
+        cur.execute(
+            """INSERT INTO msg_from_bot (user_id, time, msg_type) values (%s, %s, %s);""",
+            (user_id, datetime.datetime.now(), bot_request_aft_usr_msg),
+        )
+
+    except Exception as e:
+        logging.info('failed to update the last saved message from bot')
+        logging.exception(e)
+
+    save_bot_reply_to_user(cur, user_id, bot_message)
+
+    return None
+
+
+def run_onboarding(user_id: int, username: str, onboarding_step_id: int, got_message: str) -> int:
+    """part of the script responsible for orchestration of activities for non-finally-onboarded users"""
+
+    if onboarding_step_id == 21:  # region_set
+        # mark that onboarding is finished
+        if got_message:
+            save_onboarding_step(user_id, username, 'finished')
+            onboarding_step_id = 80
+
+    return onboarding_step_id

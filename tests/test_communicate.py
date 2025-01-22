@@ -65,7 +65,9 @@ def test_manage_topic_type(cur):
 def test_api_callback_edit_inline_keyboard(cur):
     # NO SMOKE TEST communicate.main.api_callback_edit_inline_keyboard
     cb_query = get_callback_query().to_dict()
-    res = main.api_callback_edit_inline_keyboard(get_app_config().bot_api_token__prod, cb_query, get_reply_markup(), 1)
+    res = communicate._utils.services.api_callback_edit_inline_keyboard(
+        get_app_config().bot_api_token__prod, cb_query, get_reply_markup(), 1
+    )
 
     assert res == 'failed'
 
@@ -88,7 +90,7 @@ def test_send_message_to_api():
     # NO SMOKE TEST communicate.main.send_message_to_api
     message = 'foo'
     params = {'parse_mode': 'markdown'}
-    res = main.send_message_to_api('token', 1, message, params)
+    res = communicate._utils.services.send_message_to_api('token', 1, message, params)
 
     assert res == 'failed'
 

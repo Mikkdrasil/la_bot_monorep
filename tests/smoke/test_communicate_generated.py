@@ -28,22 +28,22 @@ def test_check_onboarding_step():
 
 
 def test_compose_full_message_on_list_of_searches():
-    res = run_smoke(main.compose_full_message_on_list_of_searches)
+    res = run_smoke(communicate._utils.services.compose_full_message_on_list_of_searches)
     pass
 
 
 def test_compose_full_message_on_list_of_searches_ikb():
-    res = run_smoke(main.compose_full_message_on_list_of_searches_ikb)
+    res = run_smoke(communicate._utils.services.compose_full_message_on_list_of_searches_ikb)
     pass
 
 
 def test_compose_msg_on_active_searches_in_one_reg():
-    res = run_smoke(main.compose_msg_on_active_searches_in_one_reg)
+    res = run_smoke(communicate._utils.services.compose_msg_on_active_searches_in_one_reg)
     pass
 
 
 def test_compose_msg_on_active_searches_in_one_reg_ikb():
-    res = run_smoke(main.compose_msg_on_active_searches_in_one_reg_ikb)
+    res = run_smoke(communicate._utils.services.compose_msg_on_active_searches_in_one_reg_ikb)
     pass
 
 
@@ -98,12 +98,12 @@ def test_get_basic_update_parameters():
 
 
 def test_get_coordinates_from_string():
-    res = run_smoke(main.get_coordinates_from_string)
+    res = run_smoke(communicate._utils.services.get_coordinates_from_string)
     pass
 
 
 def test_get_last_bot_message_id():
-    res = run_smoke(main.get_last_bot_message_id)
+    res = run_smoke(communicate._utils.services.get_last_bot_message_id)
     pass
 
 
@@ -153,12 +153,12 @@ def test_if_user_enables():
 
 
 def test_inline_processing():
-    res = run_smoke(main.inline_processing)
+    res = run_smoke(communicate._utils.services.inline_processing)
     pass
 
 
 def test_leave_chat_async():
-    res = run_smoke(main.leave_chat_async)
+    res = run_smoke(communicate._utils.services.leave_chat_async)
     pass
 
 
@@ -188,7 +188,7 @@ def test_manage_radius():
 
 
 def test_prepare_message_for_leave_chat_async():
-    res = run_smoke(main.prepare_message_for_leave_chat_async)
+    res = run_smoke(communicate._utils.services.prepare_message_for_leave_chat_async)
     pass
 
 
@@ -198,7 +198,7 @@ def test_process_block_unblock_user():
 
 
 def test_process_leaving_chat_async():
-    res = run_smoke(main.process_leaving_chat_async)
+    res = run_smoke(communicate._utils.services.process_leaving_chat_async)
     pass
 
 
@@ -208,7 +208,7 @@ def test_process_response_of_api_call():
 
 
 def test_process_unneeded_messages():
-    res = run_smoke(main.process_unneeded_messages)
+    res = run_smoke(communicate._utils.services.process_unneeded_messages)
     pass
 
 
@@ -218,12 +218,12 @@ def test_process_update():
 
 
 def test_process_user_coordinates():
-    res = run_smoke(main.process_user_coordinates)
+    res = run_smoke(communicate._utils.services.process_user_coordinates)
     pass
 
 
 def test_run_onboarding():
-    res = run_smoke(main.run_onboarding)
+    res = run_smoke(communicate._utils.services.run_onboarding)
     pass
 
 
