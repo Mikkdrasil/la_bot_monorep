@@ -3,6 +3,9 @@ from unittest.mock import MagicMock, Mock
 import pytest
 from psycopg2.extensions import cursor
 
+import communicate._utils.buttons
+import communicate._utils.database
+import communicate._utils.services
 from _dependencies.commons import get_app_config, sql_connect_by_psycopg2
 from communicate import main
 from tests.factories.telegram import get_callback_query, get_reply_markup
@@ -33,7 +36,7 @@ def test_manage_search_whiteness(cur):
     # NO SMOKE TEST communicate.main.manage_search_whiteness
     cb_query = get_callback_query()
     user_callback = {'action': 'search_follow_mode', 'hash': '123', 'text': '   '}
-    res = main.manage_search_whiteness(cur, 1, user_callback, 1, cb_query, 'token')
+    res = communicate._utils.services.manage_search_whiteness(cur, 1, user_callback, 1, cb_query, 'token')
 
     assert res[0] == 'foo'
 
@@ -42,11 +45,11 @@ def test_manage_topic_type(cur):
     # NO SMOKE TEST communicate.main.manage_topic_type
     cb_query = get_callback_query()
     user_callback = {'action': 'on', 'hash': '7bf077a5', 'text': '   '}
-    res = main.manage_topic_type(
+    res = communicate._utils.services.manage_topic_type(
         cur,
         1,
         'foo',
-        main.AllButtons(main.full_buttons_dict),
+        communicate._utils.buttons.AllButtons(communicate._utils.buttons.full_buttons_dict),
         user_callback,
         1,
         'token',
@@ -69,14 +72,14 @@ def test_api_callback_edit_inline_keyboard(cur):
 
 def test_manage_age(cur):
     # NO SMOKE TEST communicate.main.manage_age
-    res = main.manage_age(cur, 1, 'включить: Маленькие Дети 0-6 лет')
+    res = communicate._utils.services.manage_age(cur, 1, 'включить: Маленькие Дети 0-6 лет')
 
     assert res[0][0] == ['отключить: Маленькие Дети 0-6 лет']
 
 
 def test_save_onboarding_step():
     # NO SMOKE TEST communicate.main.save_onboarding_step
-    res = main.save_onboarding_step(1, 'testuser', 'step')
+    res = communicate._utils.services.save_onboarding_step(1, 'testuser', 'step')
 
     assert res is None
 
@@ -93,6 +96,6 @@ def test_send_message_to_api():
 def test_send_callback_answer_to_api():
     # NO SMOKE TEST communicate.main.send_callback_answer_to_api
     message = 'foo'
-    res = main.send_callback_answer_to_api('token', 1, message)
+    res = communicate._utils.services.send_callback_answer_to_api('token', 1, message)
 
     assert res == 'failed'

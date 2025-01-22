@@ -1,26 +1,29 @@
 import pytest
 
+import communicate._utils.buttons
+import communicate._utils.database
+import communicate._utils.services
 from communicate import main
 from tests.common import run_smoke
 
 
 def test_add_user_sys_role():
-    res = run_smoke(main.add_user_sys_role)
+    res = run_smoke(communicate._utils.database.add_user_sys_role)
     pass
 
 
 def test_check_if_new_user():
-    res = run_smoke(main.check_if_new_user)
+    res = run_smoke(communicate._utils.database.check_if_new_user)
     pass
 
 
 def test_check_if_user_has_no_regions():
-    res = run_smoke(main.check_if_user_has_no_regions)
+    res = run_smoke(communicate._utils.database.check_if_user_has_no_regions)
     pass
 
 
 def test_check_onboarding_step():
-    res = run_smoke(main.check_onboarding_step)
+    res = run_smoke(communicate._utils.database.check_onboarding_step)
     pass
 
 
@@ -45,7 +48,7 @@ def test_compose_msg_on_active_searches_in_one_reg_ikb():
 
 
 def test_compose_msg_on_all_last_searches():
-    res = run_smoke(main.compose_msg_on_all_last_searches)
+    res = run_smoke(communicate._utils.database.compose_msg_on_all_last_searches)
     pass
 
 
@@ -60,7 +63,7 @@ def test_compose_msg_on_user_setting_fullness():
 
 
 def test_compose_user_preferences_message():
-    res = run_smoke(main.compose_user_preferences_message)
+    res = run_smoke(communicate._utils.database.compose_user_preferences_message)
     pass
 
 
@@ -70,22 +73,22 @@ def test_delete_last_user_inline_dialogue():
 
 
 def test_delete_user_coordinates():
-    res = run_smoke(main.delete_user_coordinates)
+    res = run_smoke(communicate._utils.database.delete_user_coordinates)
     pass
 
 
 def test_delete_user_sys_role():
-    res = run_smoke(main.delete_user_sys_role)
+    res = run_smoke(communicate._utils.database.delete_user_sys_role)
     pass
 
 
 def test_distance_to_search():
-    res = run_smoke(main.distance_to_search)
+    res = run_smoke(communicate._utils.database.distance_to_search)
     pass
 
 
 def test_generate_yandex_maps_place_link():
-    res = run_smoke(main.generate_yandex_maps_place_link)
+    res = run_smoke(communicate._utils.database.generate_yandex_maps_place_link)
     pass
 
 
@@ -105,7 +108,7 @@ def test_get_last_bot_message_id():
 
 
 def test_get_last_bot_msg():
-    res = run_smoke(main.get_last_bot_msg)
+    res = run_smoke(communicate._utils.database.get_last_bot_msg)
     pass
 
 
@@ -130,22 +133,22 @@ def test_get_the_update():
 
 
 def test_get_user_reg_folders_preferences():
-    res = run_smoke(main.get_user_reg_folders_preferences)
+    res = run_smoke(communicate._utils.database.get_user_reg_folders_preferences)
     pass
 
 
 def test_get_user_role():
-    res = run_smoke(main.get_user_role)
+    res = run_smoke(communicate._utils.database.get_user_role)
     pass
 
 
 def test_get_user_sys_roles():
-    res = run_smoke(main.get_user_sys_roles)
+    res = run_smoke(communicate._utils.database.get_user_sys_roles)
     pass
 
 
 def test_if_user_enables():
-    res = run_smoke(main.if_user_enables)
+    res = run_smoke(communicate._utils.services.if_user_enables)
     pass
 
 
@@ -165,7 +168,7 @@ def test_main():
 
 
 def test_make_api_call():
-    res = run_smoke(main.make_api_call)
+    res = run_smoke(communicate._utils.services.make_api_call)
     pass
 
 
@@ -180,7 +183,7 @@ def test_manage_linking_to_forum():
 
 
 def test_manage_radius():
-    res = run_smoke(main.manage_radius)
+    res = run_smoke(communicate._utils.services.manage_radius)
     pass
 
 
@@ -190,7 +193,7 @@ def test_prepare_message_for_leave_chat_async():
 
 
 def test_process_block_unblock_user():
-    res = run_smoke(main.process_block_unblock_user)
+    res = run_smoke(communicate._utils.services.process_block_unblock_user)
     pass
 
 
@@ -200,7 +203,7 @@ def test_process_leaving_chat_async():
 
 
 def test_process_response_of_api_call():
-    res = run_smoke(main.process_response_of_api_call)
+    res = run_smoke(communicate._utils.services.process_response_of_api_call)
     pass
 
 
@@ -225,7 +228,7 @@ def test_run_onboarding():
 
 
 def test_save_bot_reply_to_user():
-    res = run_smoke(main.save_bot_reply_to_user)
+    res = run_smoke(communicate._utils.database.save_bot_reply_to_user)
     pass
 
 
@@ -235,42 +238,42 @@ def test_save_last_user_inline_dialogue():
 
 
 def test_save_new_user():
-    res = run_smoke(main.save_new_user)
+    res = run_smoke(communicate._utils.database.save_new_user)
     pass
 
 
 def test_save_preference():
-    res = run_smoke(main.save_preference)
+    res = run_smoke(communicate._utils.database.save_preference)
     pass
 
 
 def test_save_user_coordinates():
-    res = run_smoke(main.save_user_coordinates)
+    res = run_smoke(communicate._utils.database.save_user_coordinates)
     pass
 
 
 def test_save_user_message_to_bot():
-    res = run_smoke(main.save_user_message_to_bot)
+    res = run_smoke(communicate._utils.database.save_user_message_to_bot)
     pass
 
 
 def test_save_user_pref_role():
-    res = run_smoke(main.save_user_pref_role)
+    res = run_smoke(communicate._utils.database.save_user_pref_role)
     pass
 
 
 def test_save_user_pref_topic_type():
-    res = run_smoke(main.save_user_pref_topic_type)
+    res = run_smoke(communicate._utils.database.save_user_pref_topic_type)
     pass
 
 
 def test_save_user_pref_urgency():
-    res = run_smoke(main.save_user_pref_urgency)
+    res = run_smoke(communicate._utils.database.save_user_pref_urgency)
     pass
 
 
 def test_search_button_row_ikb():
-    res = run_smoke(main.search_button_row_ikb)
+    res = run_smoke(communicate._utils.buttons.search_button_row_ikb)
     pass
 
 
@@ -280,10 +283,10 @@ def test_set_search_follow_mode():
 
 
 def test_show_user_coordinates():
-    res = run_smoke(main.show_user_coordinates)
+    res = run_smoke(communicate._utils.database.show_user_coordinates)
     pass
 
 
 def test_update_and_download_list_of_regions():
-    res = run_smoke(main.update_and_download_list_of_regions)
+    res = run_smoke(communicate._utils.database.update_and_download_list_of_regions)
     pass
