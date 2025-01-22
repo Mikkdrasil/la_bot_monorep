@@ -188,3 +188,267 @@ class Button:
 
     def temp_all_keys(self):
         return [k for k, v in self.__dict__.items()]
+
+
+c_start = '/start'
+b_back_to_start = 'в начало'
+b_fed_dist_pick_other = 'выбрать другой Федеральный Округ'
+
+
+# Settings - Dalnevostochniy Fed Dist - Regions
+b_reg_buryatiya = 'Бурятия'
+b_reg_prim_kray = 'Приморский край'
+b_reg_habarovsk = 'Хабаровский край'
+b_reg_amur = 'Амурская обл.'
+b_reg_dal_vost_other = 'Прочие поиски по ДФО'
+keyboard_dal_vost_reg_choice = [
+    [b_reg_buryatiya],
+    [b_reg_prim_kray],
+    [b_reg_habarovsk],
+    [b_reg_amur],
+    [b_reg_dal_vost_other],
+    [b_fed_dist_pick_other],
+    [b_back_to_start],
+]
+
+# Settings - Privolzhskiy Fed Dist - Regions
+b_reg_bashkorkostan = 'Башкортостан'
+b_reg_kirov = 'Кировская обл.'
+b_reg_mariy_el = 'Марий Эл'
+b_reg_mordovia = 'Мордовия'
+b_reg_nizhniy = 'Нижегородская обл.'
+b_reg_orenburg = 'Оренбургская обл.'
+b_reg_penza = 'Пензенская обл.'
+b_reg_perm = 'Пермский край'
+b_reg_samara = 'Самарская обл.'
+b_reg_saratov = 'Саратовская обл.'
+b_reg_tatarstan = 'Татарстан'
+b_reg_udmurtiya = 'Удмуртия'
+b_reg_ulyanovsk = 'Ульяновская обл.'
+b_reg_chuvashiya = 'Чувашия'
+b_reg_privolz_other = 'Прочие поиски по ПФО'
+keyboard_privolz_reg_choice = [
+    [b_reg_bashkorkostan],
+    [b_reg_kirov],
+    [b_reg_mariy_el],
+    [b_reg_mordovia],
+    [b_reg_nizhniy],
+    [b_reg_orenburg],
+    [b_reg_penza],
+    [b_reg_perm],
+    [b_reg_samara],
+    [b_reg_saratov],
+    [b_reg_tatarstan],
+    [b_reg_udmurtiya],
+    [b_reg_ulyanovsk],
+    [b_reg_chuvashiya],
+    [b_reg_privolz_other],
+    [b_fed_dist_pick_other],
+    [b_back_to_start],
+]
+
+
+# Settings - Severo-Kavkazskiy Fed Dist - Regions
+b_reg_dagestan = 'Дагестан'
+b_reg_stavropol = 'Ставропольский край'
+b_reg_chechnya = 'Чечня'
+b_reg_kabarda = 'Кабардино-Балкария'
+b_reg_ingushetia = 'Ингушетия'
+b_reg_sev_osetia = 'Северная Осетия'
+b_reg_sev_kav_other = 'Прочие поиски по СКФО'
+keyboard_sev_kav_reg_choice = [
+    [b_reg_dagestan],
+    [b_reg_stavropol],
+    [b_reg_chechnya],
+    [b_reg_kabarda],
+    [b_reg_ingushetia],
+    [b_reg_sev_osetia],
+    [b_reg_sev_kav_other],
+    [b_fed_dist_pick_other],
+    [b_back_to_start],
+]
+
+# Settings - Severo-Zapadniy Fed Dist - Regions
+b_reg_vologda = 'Вологодская обл.'
+b_reg_karelia = 'Карелия'
+b_reg_komi = 'Коми'
+b_reg_piter = 'Ленинградская обл.'
+b_reg_murmansk = 'Мурманская обл.'
+b_reg_pskov = 'Псковская обл.'
+b_reg_archangelsk = 'Архангельская обл.'
+b_reg_sev_zap_other = 'Прочие поиски по СЗФО'
+keyboard_sev_zap_reg_choice = [
+    [b_reg_vologda],
+    [b_reg_komi],
+    [b_reg_karelia],
+    [b_reg_piter],
+    [b_reg_murmansk],
+    [b_reg_pskov],
+    [b_reg_archangelsk],
+    [b_reg_sev_zap_other],
+    [b_fed_dist_pick_other],
+    [b_back_to_start],
+]
+
+
+# Settings - Sibirskiy Fed Dist - Regions
+b_reg_altay = 'Алтайский край'
+b_reg_irkutsk = 'Иркутская обл.'
+b_reg_kemerovo = 'Кемеровская обл.'
+b_reg_krasnoyarsk = 'Красноярский край'
+b_reg_novosib = 'Новосибирская обл.'
+b_reg_omsk = 'Омская обл.'
+b_reg_tomsk = 'Томская обл.'
+b_reg_hakasiya = 'Хакасия'
+b_reg_sibiria_reg_other = 'Прочие поиски по СФО'
+keyboard_sibiria_reg_choice = [
+    [b_reg_altay],
+    [b_reg_irkutsk],
+    [b_reg_kemerovo],
+    [b_reg_krasnoyarsk],
+    [b_reg_novosib],
+    [b_reg_omsk],
+    [b_reg_tomsk],
+    [b_reg_hakasiya],
+    [b_reg_sibiria_reg_other],
+    [b_fed_dist_pick_other],
+    [b_back_to_start],
+]
+
+
+# Settings - Uralskiy Fed Dist - Regions
+b_reg_ekat = 'Свердловская обл.'
+b_reg_kurgan = 'Курганская обл.'
+b_reg_tyumen = 'Тюменская обл.'
+b_reg_hanty_mansi = 'Ханты-Мансийский АО'
+b_reg_chelyabinks = 'Челябинская обл.'
+b_reg_yamal = 'Ямало-Ненецкий АО'
+b_reg_urals_reg_other = 'Прочие поиски по УФО'
+keyboard_urals_reg_choice = [
+    [b_reg_ekat],
+    [b_reg_kurgan],
+    [b_reg_tyumen],
+    [b_reg_hanty_mansi],
+    [b_reg_chelyabinks],
+    [b_reg_yamal],
+    [b_reg_urals_reg_other],
+    [b_fed_dist_pick_other],
+    [b_back_to_start],
+]
+
+
+# Settings - Central Fed Dist - Regions
+b_reg_belogorod = 'Белгородская обл.'
+b_reg_bryansk = 'Брянская обл.'
+b_reg_vladimir = 'Владимирская обл.'
+b_reg_voronezh = 'Воронежская обл.'
+b_reg_ivanovo = 'Ивановская обл.'
+b_reg_kaluga = 'Калужская обл.'
+b_reg_kostroma = 'Костромская обл.'
+b_reg_kursk = 'Курская обл.'
+b_reg_lipetsk = 'Липецкая обл.'
+b_reg_msk_act = 'Москва и МО: Активные Поиски'
+b_reg_msk_inf = 'Москва и МО: Инфо Поддержка'
+b_reg_orel = 'Орловская обл.'
+b_reg_ryazan = 'Рязанская обл.'
+b_reg_smolensk = 'Смоленская обл.'
+b_reg_tambov = 'Тамбовская обл.'
+b_reg_tver = 'Тверская обл.'
+b_reg_tula = 'Тульская обл.'
+b_reg_yaroslavl = 'Ярославская обл.'
+b_reg_central_reg_other = 'Прочие поиски по ЦФО'
+keyboard_central_reg_choice = [
+    [b_reg_belogorod],
+    [b_reg_bryansk],
+    [b_reg_vladimir],
+    [b_reg_voronezh],
+    [b_reg_ivanovo],
+    [b_reg_kaluga],
+    [b_reg_kostroma],
+    [b_reg_kursk],
+    [b_reg_lipetsk],
+    [b_reg_msk_act],
+    [b_reg_msk_inf],
+    [b_reg_orel],
+    [b_reg_ryazan],
+    [b_reg_smolensk],
+    [b_reg_tambov],
+    [b_reg_tver],
+    [b_reg_tula],
+    [b_reg_yaroslavl],
+    [b_reg_central_reg_other],
+    [b_fed_dist_pick_other],
+    [b_back_to_start],
+]
+
+
+# Settings - Yuzhniy Fed Dist - Regions
+b_reg_adygeya = 'Адыгея'
+b_reg_astrahan = 'Астраханская обл.'
+b_reg_volgograd = 'Волгоградская обл.'
+b_reg_krasnodar = 'Краснодарский край'
+b_reg_krym = 'Крым'
+b_reg_rostov = 'Ростовская обл.'
+b_reg_yuzhniy_reg_other = 'Прочие поиски по ЮФО'
+keyboard_yuzhniy_reg_choice = [
+    [b_reg_adygeya],
+    [b_reg_astrahan],
+    [b_reg_volgograd],
+    [b_reg_krasnodar],
+    [b_reg_krym],
+    [b_reg_rostov],
+    [b_reg_yuzhniy_reg_other],
+    [b_fed_dist_pick_other],
+    [b_back_to_start],
+]
+
+
+# Settings - Federal Districts
+b_fed_dist_dal_vos = 'Дальневосточный ФО'
+b_fed_dist_privolz = 'Приволжский ФО'
+b_fed_dist_sev_kaz = 'Северо-Кавказский ФО'
+b_fed_dist_sev_zap = 'Северо-Западный ФО'
+b_fed_dist_sibiria = 'Сибирский ФО'
+b_fed_dist_uralsky = 'Уральский ФО'
+b_fed_dist_central = 'Центральный ФО'
+b_fed_dist_yuzhniy = 'Южный ФО'
+b_fed_dist_other_r = 'Прочие поиски по РФ'
+
+keyboard_fed_dist_set = [  # import
+    [b_fed_dist_dal_vos],
+    [b_fed_dist_privolz],
+    [b_fed_dist_sev_kaz],
+    [b_fed_dist_sev_zap],
+    [b_fed_dist_sibiria],
+    [b_fed_dist_uralsky],
+    [b_fed_dist_central],
+    [b_fed_dist_yuzhniy],
+    [b_fed_dist_other_r],
+    [b_back_to_start],
+]
+
+
+dict_of_fed_dist = {  # import
+    b_fed_dist_dal_vos: keyboard_dal_vost_reg_choice,
+    b_fed_dist_privolz: keyboard_privolz_reg_choice,
+    b_fed_dist_sev_kaz: keyboard_sev_kav_reg_choice,
+    b_fed_dist_sev_zap: keyboard_sev_zap_reg_choice,
+    b_fed_dist_sibiria: keyboard_sibiria_reg_choice,
+    b_fed_dist_uralsky: keyboard_urals_reg_choice,
+    b_fed_dist_central: keyboard_central_reg_choice,
+    b_fed_dist_yuzhniy: keyboard_yuzhniy_reg_choice,
+}
+
+full_list_of_regions = (
+    keyboard_dal_vost_reg_choice[:-1]
+    + keyboard_privolz_reg_choice[:-1]
+    + keyboard_sev_kav_reg_choice[:-1]
+    + keyboard_sev_zap_reg_choice[:-1]
+    + keyboard_sibiria_reg_choice[:-1]
+    + keyboard_urals_reg_choice[:-1]
+    + keyboard_central_reg_choice[:-1]
+    + keyboard_yuzhniy_reg_choice[:-1]
+    + [[b_fed_dist_other_r]]
+)  # noqa – for strange pycharm indent warning
+
+full_dict_of_regions = {word[0] for word in full_list_of_regions}
