@@ -1430,6 +1430,34 @@ def process_update(cur, update: Update) -> str:
         bot_message = 'не понимаю такой команды, пожалуйста, используйте кнопки со стандартными ' 'командами ниже'
         reply_markup = reply_markup_main
 
+    finalize_bot_response(
+        cur,
+        bot_token,
+        user_id,
+        got_hash,
+        got_callback,
+        callback_query,
+        reply_markup,
+        bot_request_aft_usr_msg,
+        msg_sent_by_specific_code,
+        bot_message,
+    )
+
+    return 'finished successfully. in was a regular conversational message'
+
+
+def finalize_bot_response(
+    cur,
+    bot_token,
+    user_id,
+    got_hash,
+    got_callback,
+    callback_query,
+    reply_markup,
+    bot_request_aft_usr_msg,
+    msg_sent_by_specific_code,
+    bot_message,
+):
     if not msg_sent_by_specific_code:
         # FIXME – 17.11.2023 – migrating from async to pure api call
         """
@@ -1520,5 +1548,3 @@ def process_update(cur, update: Update) -> str:
 
     if bot_message:
         save_bot_reply_to_user(cur, user_id, bot_message)
-
-    return 'finished successfully. in was a regular conversational message'
