@@ -1,4 +1,5 @@
 import hashlib
+from enum import Enum
 from typing import Any, Dict
 
 full_buttons_dict = {
@@ -452,3 +453,106 @@ full_list_of_regions = (
 )  # noqa – for strange pycharm indent warning
 
 full_dict_of_regions = {word[0] for word in full_list_of_regions}
+
+
+class ExtendedEnum(Enum):
+    @classmethod
+    def list(cls):
+        return list(map(lambda c: c.value, cls))
+
+
+class Commands(str, ExtendedEnum):
+    c_view_act_searches = '/view_act_searches'
+    c_view_latest_searches = '/view_latest_searches'
+    c_settings = '/settings'
+    c_other = '/other'
+    c_map = '/map'
+
+
+class RoleChoice(str, ExtendedEnum):
+    b_role_iam_la = 'я состою в ЛизаАлерт'
+    b_role_want_to_be_la = 'я хочу помогать ЛизаАлерт'
+    b_role_looking_for_person = 'я ищу человека'
+    b_role_other = 'у меня другая задача'
+    b_role_secret = 'не хочу говорить'
+
+
+# TODO ^^^
+
+
+class UrgencySettings(str, ExtendedEnum):
+    b_pref_urgency_highest = 'самым первым (<2 минуты)'
+    b_pref_urgency_high = 'пораньше (<5 минут)'
+    b_pref_urgency_medium = 'могу ждать (<10 минут)'
+    b_pref_urgency_low = 'не сильно важно (>10 минут)'
+
+
+class MainSettingsMenu(str, ExtendedEnum):
+    # Settings menu
+    b_set_pref_notif_type = 'настроить виды уведомлений'
+    b_set_pref_coords = 'настроить "домашние координаты"'
+    b_set_pref_radius = 'настроить максимальный радиус'
+    b_set_pref_age = 'настроить возрастные группы БВП'
+    b_set_pref_urgency = 'настроить скорость уведомлений'  # <-- TODO: likely to be removed as redundant
+    b_set_pref_role = 'настроить вашу роль'  # <-- TODO # noqa
+    b_set_forum_nick = 'связать аккаунты бота и форума'
+    b_change_forum_nick = 'изменить аккаунт форума'  # noqa
+    b_set_topic_type = 'настроить вид поисков'
+
+
+class NotificationSettingsMenu(str, ExtendedEnum):
+    # Settings - notifications
+    b_act_all = 'включить: все уведомления'
+    b_act_new_search = 'включить: о новых поисках'
+    b_act_stat_change = 'включить: об изменениях статусов'
+    b_act_all_comments = 'включить: о всех новых комментариях'
+    b_act_inforg_com = 'включить: о комментариях Инфорга'
+    b_act_field_trips_new = 'включить: о новых выездах'
+    b_act_field_trips_change = 'включить: об изменениях в выездах'
+    b_act_coords_change = 'включить: о смене места штаба'
+    b_act_first_post_change = 'включить: об изменениях в первом посте'
+    b_deact_all = 'настроить более гибко'
+    b_deact_new_search = 'отключить: о новых поисках'
+    b_deact_stat_change = 'отключить: об изменениях статусов'
+    b_deact_all_comments = 'отключить: о всех новых комментариях'
+    b_deact_inforg_com = 'отключить: о комментариях Инфорга'
+    b_deact_field_trips_new = 'отключить: о новых выездах'
+    b_deact_field_trips_change = 'отключить: об изменениях в выездах'
+    b_deact_coords_change = 'отключить: о смене места штаба'
+    b_deact_first_post_change = 'отключить: об изменениях в первом посте'
+
+
+class AgePreferencesMenu(str, ExtendedEnum):
+    b_pref_age_0_6_act = 'отключить: Маленькие Дети 0-6 лет'
+    b_pref_age_0_6_deact = 'включить: Маленькие Дети 0-6 лет'
+    b_pref_age_7_13_act = 'отключить: Подростки 7-13 лет'
+    b_pref_age_7_13_deact = 'включить: Подростки 7-13 лет'
+    b_pref_age_14_20_act = 'отключить: Молодежь 14-20 лет'
+    b_pref_age_14_20_deact = 'включить: Молодежь 14-20 лет'
+    b_pref_age_21_50_act = 'отключить: Взрослые 21-50 лет'
+    b_pref_age_21_50_deact = 'включить: Взрослые 21-50 лет'
+    b_pref_age_51_80_act = 'отключить: Старшее Поколение 51-80 лет'
+    b_pref_age_51_80_deact = 'включить: Старшее Поколение 51-80 лет'
+    b_pref_age_81_on_act = 'отключить: Старцы более 80 лет'
+    b_pref_age_81_on_deact = 'включить: Старцы более 80 лет'
+
+
+class MainMenu(str, ExtendedEnum):
+    b_view_act_searches = 'посмотреть актуальные поиски'
+    b_settings = 'настроить бот'
+    b_other = 'другие возможности'
+    b_map = '🔥Карта Поисков 🔥'
+
+
+class DistanceSettings(str, ExtendedEnum):
+    b_pref_radius_act = 'включить ограничение по расстоянию'
+    b_pref_radius_deact = 'отключить ограничение по расстоянию'
+    b_pref_radius_change = 'изменить ограничение по расстоянию'
+
+
+# Other menu
+class OtherMenu(str, ExtendedEnum):
+    b_view_latest_searches = 'посмотреть последние поиски'
+    b_goto_community = 'написать разработчику бота'
+    b_goto_first_search = 'ознакомиться с информацией для новичка'
+    b_goto_photos = 'посмотреть красивые фото с поисков'

@@ -9,6 +9,7 @@ import logging
 import re
 import urllib.parse
 import urllib.request
+from enum import Enum  #
 from typing import Any, List, Optional, Tuple, Union
 
 import requests
@@ -39,15 +40,24 @@ from _dependencies.misc import (
 )
 
 from ._utils.buttons import (
+    AgePreferencesMenu,
     AllButtons,
+    Commands,
+    DistanceSettings,
+    MainMenu,
+    MainSettingsMenu,
+    NotificationSettingsMenu,
+    OtherMenu,
+    RoleChoice,
+    UrgencySettings,
     b_back_to_start,
     b_fed_dist_pick_other,
     c_start,
     dict_of_fed_dist,
     full_buttons_dict,
+    full_dict_of_regions,
     keyboard_fed_dist_set,
     search_button_row_ikb,
-    full_dict_of_regions,
 )
 from ._utils.database import (
     add_user_sys_role,
@@ -102,19 +112,6 @@ setup_google_logging()
 logging.getLogger('telegram.vendor.ptb_urllib3.urllib3').setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
-
-c_view_act_searches = '/view_act_searches'
-c_view_latest_searches = '/view_latest_searches'
-c_settings = '/settings'
-c_other = '/other'
-c_map = '/map'
-
-b_role_iam_la = 'я состою в ЛизаАлерт'
-b_role_want_to_be_la = 'я хочу помогать ЛизаАлерт'
-b_role_looking_for_person = 'я ищу человека'
-b_role_other = 'у меня другая задача'
-b_role_secret = 'не хочу говорить'
-
 b_orders_done = 'да, заявки поданы'
 b_orders_tbd = 'нет, но я хочу продолжить'
 
@@ -122,53 +119,13 @@ b_orders_tbd = 'нет, но я хочу продолжить'
 b_forum_check_nickname = 'указать свой nickname с форума'  # noqa
 b_forum_dont_have = 'у меня нет аккаунта на форуме ЛА'  # noqa
 b_forum_dont_want = 'пропустить / не хочу говорить'  # noqa
-# TODO ^^^
-
-b_pref_urgency_highest = 'самым первым (<2 минуты)'
-b_pref_urgency_high = 'пораньше (<5 минут)'
-b_pref_urgency_medium = 'могу ждать (<10 минут)'
-b_pref_urgency_low = 'не сильно важно (>10 минут)'
-
 b_yes_its_me = 'да, это я'
 b_no_its_not_me = 'нет, это не я'
 
-b_view_act_searches = 'посмотреть актуальные поиски'
-b_settings = 'настроить бот'
-b_other = 'другие возможности'
-b_map = '🔥Карта Поисков 🔥'
-keyboard_main = [[b_map], [b_view_act_searches], [b_settings], [b_other]]
+
+keyboard_main = [[MainMenu.b_map], [MainMenu.b_view_act_searches], [MainMenu.b_settings], [MainMenu.b_other]]
 reply_markup_main = ReplyKeyboardMarkup(keyboard_main, resize_keyboard=True)
 
-# Settings menu
-b_set_pref_notif_type = 'настроить виды уведомлений'
-b_set_pref_coords = 'настроить "домашние координаты"'
-b_set_pref_radius = 'настроить максимальный радиус'
-b_set_pref_age = 'настроить возрастные группы БВП'
-b_set_pref_urgency = 'настроить скорость уведомлений'  # <-- TODO: likely to be removed as redundant
-b_set_pref_role = 'настроить вашу роль'  # <-- TODO # noqa
-b_set_forum_nick = 'связать аккаунты бота и форума'
-b_change_forum_nick = 'изменить аккаунт форума'  # noqa
-b_set_topic_type = 'настроить вид поисков'
-
-# Settings - notifications
-b_act_all = 'включить: все уведомления'
-b_act_new_search = 'включить: о новых поисках'
-b_act_stat_change = 'включить: об изменениях статусов'
-b_act_all_comments = 'включить: о всех новых комментариях'
-b_act_inforg_com = 'включить: о комментариях Инфорга'
-b_act_field_trips_new = 'включить: о новых выездах'
-b_act_field_trips_change = 'включить: об изменениях в выездах'
-b_act_coords_change = 'включить: о смене места штаба'
-b_act_first_post_change = 'включить: об изменениях в первом посте'
-b_deact_all = 'настроить более гибко'
-b_deact_new_search = 'отключить: о новых поисках'
-b_deact_stat_change = 'отключить: об изменениях статусов'
-b_deact_all_comments = 'отключить: о всех новых комментариях'
-b_deact_inforg_com = 'отключить: о комментариях Инфорга'
-b_deact_field_trips_new = 'отключить: о новых выездах'
-b_deact_field_trips_change = 'отключить: об изменениях в выездах'
-b_deact_coords_change = 'отключить: о смене места штаба'
-b_deact_first_post_change = 'отключить: об изменениях в первом посте'
 
 # Settings - coordinates
 b_coords_auto_def = KeyboardButton(text='автоматически определить "домашние координаты"', request_location=True)
@@ -181,20 +138,15 @@ b_reg_moscow = 'да, Москва – мой регион'
 b_reg_not_moscow = 'нет, я из другого региона'
 
 
-
 # Settings - Fed Dist - Regions
 b_menu_set_region = 'настроить регион поисков'
 
-# Other menu
-b_view_latest_searches = 'посмотреть последние поиски'
-b_goto_community = 'написать разработчику бота'
-b_goto_first_search = 'ознакомиться с информацией для новичка'
-b_goto_photos = 'посмотреть красивые фото с поисков'
+
 keyboard_other = [
-    [b_view_latest_searches],
-    [b_goto_first_search],
-    [b_goto_community],
-    [b_goto_photos],
+    [OtherMenu.b_view_latest_searches],
+    [OtherMenu.b_goto_first_search],
+    [OtherMenu.b_goto_community],
+    [OtherMenu.b_goto_photos],
     [b_back_to_start],
 ]
 
@@ -207,22 +159,6 @@ b_test_menu = 'test'
 b_test_search_follow_mode_on = 'test search follow mode on'  # noqa
 b_test_search_follow_mode_off = 'test search follow mode off'
 
-b_pref_age_0_6_act = 'отключить: Маленькие Дети 0-6 лет'
-b_pref_age_0_6_deact = 'включить: Маленькие Дети 0-6 лет'
-b_pref_age_7_13_act = 'отключить: Подростки 7-13 лет'
-b_pref_age_7_13_deact = 'включить: Подростки 7-13 лет'
-b_pref_age_14_20_act = 'отключить: Молодежь 14-20 лет'
-b_pref_age_14_20_deact = 'включить: Молодежь 14-20 лет'
-b_pref_age_21_50_act = 'отключить: Взрослые 21-50 лет'
-b_pref_age_21_50_deact = 'включить: Взрослые 21-50 лет'
-b_pref_age_51_80_act = 'отключить: Старшее Поколение 51-80 лет'
-b_pref_age_51_80_deact = 'включить: Старшее Поколение 51-80 лет'
-b_pref_age_81_on_act = 'отключить: Старцы более 80 лет'
-b_pref_age_81_on_deact = 'включить: Старцы более 80 лет'
-
-b_pref_radius_act = 'включить ограничение по расстоянию'
-b_pref_radius_deact = 'отключить ограничение по расстоянию'
-b_pref_radius_change = 'изменить ограничение по расстоянию'
 
 b_help_yes = 'да, помогите мне настроить бот'
 b_help_no = 'нет, помощь не требуется'
@@ -849,6 +785,7 @@ def main(request: Request) -> str:
 
 
 def process_update(update: Update) -> str:
+    global keyboard_other  # TODO
     bot_token = get_app_config().bot_api_token__prod
 
     (
@@ -988,11 +925,11 @@ def process_update(update: Update) -> str:
                         'укажите вашу роль сейчас?'
                     )
                     keyboard_role = [
-                        [b_role_iam_la],
-                        [b_role_want_to_be_la],
-                        [b_role_looking_for_person],
-                        [b_role_other],
-                        [b_role_secret],
+                        [RoleChoice.b_role_iam_la],
+                        [RoleChoice.b_role_want_to_be_la],
+                        [RoleChoice.b_role_looking_for_person],
+                        [RoleChoice.b_role_other],
+                        [RoleChoice.b_role_secret],
                     ]
                     reply_markup = ReplyKeyboardMarkup(keyboard_role, resize_keyboard=True)
 
@@ -1034,13 +971,13 @@ def process_update(update: Update) -> str:
                 )
 
                 keyboard_role = [
-                    [b_set_pref_notif_type],
-                    [b_set_pref_coords],
-                    [b_set_pref_radius],
-                    [b_set_pref_age],
-                    [b_set_forum_nick],
-                    [b_view_latest_searches],
-                    [b_view_act_searches],
+                    [MainSettingsMenu.b_set_pref_notif_type],
+                    [MainSettingsMenu.b_set_pref_coords],
+                    [MainSettingsMenu.b_set_pref_radius],
+                    [MainSettingsMenu.b_set_pref_age],
+                    [MainSettingsMenu.b_set_forum_nick],
+                    [OtherMenu.b_view_latest_searches],
+                    [MainMenu.b_view_act_searches],
                     [b_back_to_start],
                 ]
                 reply_markup = ReplyKeyboardMarkup(keyboard_role, resize_keyboard=True)
@@ -1066,27 +1003,21 @@ def process_update(update: Update) -> str:
                     )
 
             elif got_message in {
-                b_role_looking_for_person,
-                b_role_want_to_be_la,
-                b_role_iam_la,
-                b_role_secret,
-                b_role_other,
+                RoleChoice.b_role_looking_for_person,
+                RoleChoice.b_role_want_to_be_la,
+                RoleChoice.b_role_iam_la,
+                RoleChoice.b_role_secret,
+                RoleChoice.b_role_other,
                 b_orders_done,
                 b_orders_tbd,
             }:
                 # save user role & onboarding stage
-                if got_message in {
-                    b_role_want_to_be_la,
-                    b_role_iam_la,
-                    b_role_looking_for_person,
-                    b_role_other,
-                    b_role_secret,
-                }:
+                if got_message in RoleChoice.list():
                     user_role = save_user_pref_role(cur, user_id, got_message)
                     save_onboarding_step(user_id, username, 'role_set')
 
                 # get user role = relatives looking for a person
-                if got_message == b_role_looking_for_person:
+                if got_message == RoleChoice.b_role_looking_for_person:
                     bot_message = (
                         'Тогда вам следует:\n\n'
                         '1. Подайте заявку на поиск в ЛизаАлерт ОДНИМ ИЗ ДВУХ способов:\n'
@@ -1122,7 +1053,7 @@ def process_update(update: Update) -> str:
                     reply_markup = ReplyKeyboardMarkup(keyboard_orders, resize_keyboard=True)
 
                 # get user role = potential LA volunteer
-                elif got_message == b_role_want_to_be_la:
+                elif got_message == RoleChoice.b_role_want_to_be_la:
                     bot_message = (
                         'Супер! \n'
                         'Знаете ли вы, как можно помогать ЛизаАлерт? Определились ли вы, как '
@@ -1146,7 +1077,13 @@ def process_update(update: Update) -> str:
                     reply_markup = ReplyKeyboardMarkup(keyboard_coordinates_admin, resize_keyboard=True)
 
                 # get user role = all others
-                elif got_message in {b_role_iam_la, b_role_other, b_role_secret, b_orders_done, b_orders_tbd}:
+                elif got_message in {
+                    RoleChoice.b_role_iam_la,
+                    RoleChoice.b_role_other,
+                    RoleChoice.b_role_secret,
+                    b_orders_done,
+                    b_orders_tbd,
+                }:
                     bot_message = (
                         'Спасибо. Теперь уточните, пожалуйста, ваш основной регион – это '
                         'Москва и Московская Область?'
@@ -1200,20 +1137,15 @@ def process_update(update: Update) -> str:
                 )
 
             # set user pref: urgency
-            elif got_message in {
-                b_pref_urgency_highest,
-                b_pref_urgency_high,
-                b_pref_urgency_medium,
-                b_pref_urgency_low,
-            }:
+            elif got_message in UrgencySettings.list():
                 save_user_pref_urgency(
                     cur,
                     user_id,
                     got_message,
-                    b_pref_urgency_highest,
-                    b_pref_urgency_high,
-                    b_pref_urgency_medium,
-                    b_pref_urgency_low,
+                    UrgencySettings.b_pref_urgency_highest,
+                    UrgencySettings.b_pref_urgency_high,
+                    UrgencySettings.b_pref_urgency_medium,
+                    UrgencySettings.b_pref_urgency_low,
                 )
                 bot_message = 'Хорошо, спасибо. Бот запомнил ваш выбор.'
 
@@ -1221,7 +1153,7 @@ def process_update(update: Update) -> str:
             elif not user_regions and not (
                 got_message in full_dict_of_regions
                 or got_message in dict_of_fed_dist
-                or got_message in {b_menu_set_region, c_start, b_settings, c_settings}
+                or got_message in {b_menu_set_region, c_start, MainMenu.b_settings, Commands.c_settings}
             ):
                 bot_message = (
                     'Для корректной работы бота, пожалуйста, задайте свой регион. Для этого '
@@ -1252,18 +1184,18 @@ def process_update(update: Update) -> str:
 
             # Send summaries
             elif got_message in {
-                b_view_latest_searches,
-                b_view_act_searches,
-                c_view_latest_searches,
-                c_view_act_searches,
+                OtherMenu.b_view_latest_searches,
+                MainMenu.b_view_act_searches,
+                Commands.c_view_latest_searches,
+                Commands.c_view_act_searches,
             }:
                 msg_sent_by_specific_code = True
 
                 temp_dict = {
-                    b_view_latest_searches: 'all',
-                    b_view_act_searches: 'active',
-                    c_view_latest_searches: 'all',
-                    c_view_act_searches: 'active',
+                    OtherMenu.b_view_latest_searches: 'all',
+                    MainMenu.b_view_act_searches: 'active',
+                    Commands.c_view_latest_searches: 'all',
+                    Commands.c_view_act_searches: 'active',
                 }
 
                 cur.execute(
@@ -1496,7 +1428,7 @@ def process_update(update: Update) -> str:
                 bot_message = 'Возможность отслеживания поисков вЫключена. Возвращаемся в главное меню.'
                 reply_markup = reply_markup_main
 
-            elif got_message in {b_map, c_map}:
+            elif got_message in {MainMenu.b_map, Commands.c_map}:
                 bot_message = (
                     'В Боте Поисковика теперь можно посмотреть 🗺️Карту Поисков📍.\n\n'
                     'На карте вы сможете увидеть все активные поиски, '
@@ -1523,27 +1455,13 @@ def process_update(update: Update) -> str:
                     cur, user_id, got_message, b, got_callback, callback_query_id, bot_token, callback_query_message_id
                 )
 
-            elif got_message in {
-                b_set_pref_age,
-                b_pref_age_0_6_act,
-                b_pref_age_0_6_deact,
-                b_pref_age_7_13_act,
-                b_pref_age_7_13_deact,
-                b_pref_age_14_20_act,
-                b_pref_age_14_20_deact,
-                b_pref_age_21_50_act,
-                b_pref_age_21_50_deact,
-                b_pref_age_51_80_act,
-                b_pref_age_51_80_deact,
-                b_pref_age_81_on_act,
-                b_pref_age_81_on_deact,
-            }:
-                input_data = None if got_message == b_set_pref_age else got_message
+            elif got_message in {MainSettingsMenu.b_set_pref_age} or got_message in AgePreferencesMenu.list():
+                input_data = None if got_message == MainSettingsMenu.b_set_pref_age else got_message
                 keyboard, first_visit = manage_age(cur, user_id, input_data)
                 keyboard.append([b_back_to_start])
                 reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-                if got_message.lower() == b_set_pref_age:
+                if got_message.lower() == MainSettingsMenu.b_set_pref_age:
                     bot_message = (
                         'Чтобы включить или отключить уведомления по определенной возрастной '
                         'группе, нажмите на неё. Настройку можно изменить в любой момент.'
@@ -1561,42 +1479,43 @@ def process_update(update: Update) -> str:
                     bot_message = 'Спасибо, записали.'
 
             elif (
-                got_message in {b_set_pref_radius, b_pref_radius_act, b_pref_radius_deact, b_pref_radius_change}
+                got_message == MainSettingsMenu.b_set_pref_radius
+                or got_message in DistanceSettings.list()
                 or bot_request_bfr_usr_msg == 'radius_input'
             ):
                 bot_message, reply_markup, bot_request_aft_usr_msg = manage_radius(
                     cur,
                     user_id,
                     got_message,
-                    b_set_pref_radius,
-                    b_pref_radius_act,
-                    b_pref_radius_deact,
-                    b_pref_radius_change,
+                    MainSettingsMenu.b_set_pref_radius,
+                    DistanceSettings.b_pref_radius_act,
+                    DistanceSettings.b_pref_radius_deact,
+                    DistanceSettings.b_pref_radius_change,
                     b_back_to_start,
-                    b_set_pref_coords,
+                    MainSettingsMenu.b_set_pref_coords,
                     bot_request_bfr_usr_msg,
                 )
 
             elif (
-                got_message in {b_set_forum_nick, b_yes_its_me, b_no_its_not_me}
+                got_message in {MainSettingsMenu.b_set_forum_nick, b_yes_its_me, b_no_its_not_me}
                 or bot_request_bfr_usr_msg == 'input_of_forum_username'
             ):
                 bot_message, reply_markup, bot_request_aft_usr_msg = manage_linking_to_forum(
                     cur,
                     got_message,
                     user_id,
-                    b_set_forum_nick,
+                    MainSettingsMenu.b_set_forum_nick,
                     b_back_to_start,
                     bot_request_bfr_usr_msg,
                     b_admin_menu,
                     b_test_menu,
                     b_yes_its_me,
                     b_no_its_not_me,
-                    b_settings,
+                    MainMenu.b_settings,
                     reply_markup_main,
                 )
 
-            elif got_message == b_set_pref_urgency:
+            elif got_message == MainSettingsMenu.b_set_pref_urgency:
                 bot_message = (
                     'Очень многие поисковики пользуются этим Ботом. При любой рассылке нотификаций'
                     ' Бот ставит все сообщения в очередь, и они обрабатываются '
@@ -1609,10 +1528,10 @@ def process_update(update: Update) -> str:
                     'Выберите наиболее подходящий Вам вариант'
                 )
                 keyboard = [
-                    [b_pref_urgency_highest],
-                    [b_pref_urgency_high],
-                    [b_pref_urgency_medium],
-                    [b_pref_urgency_low],
+                    [UrgencySettings.b_pref_urgency_highest],
+                    [UrgencySettings.b_pref_urgency_high],
+                    [UrgencySettings.b_pref_urgency_medium],
+                    [UrgencySettings.b_pref_urgency_low],
                     [b_back_to_start],
                 ]
                 reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -1621,7 +1540,7 @@ def process_update(update: Update) -> str:
             elif got_message.lower() == 'go':
                 publish_to_pubsub(Topics.topic_notify_admin, 'test_admin_check')
 
-            elif got_message in {b_other, c_other}:
+            elif got_message in {MainMenu.b_other, Commands.c_other}:
                 bot_message = (
                     'Здесь можно посмотреть статистику по 20 последним поискам, перейти в '
                     'канал Коммъюнити или Прочитать важную информацию для Новичка и посмотреть '
@@ -1662,7 +1581,7 @@ def process_update(update: Update) -> str:
                     save_onboarding_step(user_id, username, 'region_set')
                     save_user_pref_topic_type(cur, user_id, 'default', user_role)
 
-            elif got_message in {b_settings, c_settings}:
+            elif got_message in {MainMenu.b_settings, Commands.c_settings}:
                 bot_message = (
                     'Это раздел с настройками. Здесь вы можете выбрать удобные для вас '
                     'уведомления, а также ввести свои "домашние координаты", на основе которых '
@@ -1675,18 +1594,18 @@ def process_update(update: Update) -> str:
                     bot_message = f'{bot_message}\n\n{message_prefix}'
 
                 keyboard_settings = [
-                    [b_set_pref_notif_type],
+                    [MainSettingsMenu.b_set_pref_notif_type],
                     [b_menu_set_region],
-                    [b_set_topic_type],
-                    [b_set_pref_coords],
-                    [b_set_pref_radius],
-                    [b_set_pref_age],
-                    [b_set_forum_nick],
+                    [MainSettingsMenu.b_set_topic_type],
+                    [MainSettingsMenu.b_set_pref_coords],
+                    [MainSettingsMenu.b_set_pref_radius],
+                    [MainSettingsMenu.b_set_pref_age],
+                    [MainSettingsMenu.b_set_forum_nick],
                     [b_back_to_start],
                 ]  # #AK added b_set_forum_nick for issue #6
                 reply_markup = ReplyKeyboardMarkup(keyboard_settings, resize_keyboard=True)
 
-            elif got_message == b_set_pref_coords:
+            elif got_message == MainSettingsMenu.b_set_pref_coords:
                 bot_message = (
                     'АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ координат работает только для носимых устройств'
                     ' (для настольных компьютеров – НЕ работает: используйте, пожалуйста, '
@@ -1751,17 +1670,22 @@ def process_update(update: Update) -> str:
                 bot_message = 'возвращаемся в главное меню'
                 reply_markup = reply_markup_main
 
-            elif got_message == b_goto_community:
+            elif got_message == OtherMenu.b_goto_community:
                 bot_message = (
                     'Бот можно обсудить с соотрядниками в '
                     '<a href="https://t.me/joinchat/2J-kV0GaCgwxY2Ni">Специальном Чате '
                     'в телеграм</a>. Там можно предложить свои идеи, указать на проблемы '
                     'и получить быструю обратную связь от разработчика.'
                 )
-                keyboard_other = [[b_view_latest_searches], [b_goto_first_search], [b_goto_photos], [b_back_to_start]]
+                keyboard_other = [
+                    [OtherMenu.b_view_latest_searches],
+                    [OtherMenu.b_goto_first_search],
+                    [OtherMenu.b_goto_photos],
+                    [b_back_to_start],
+                ]
                 reply_markup = ReplyKeyboardMarkup(keyboard_other, resize_keyboard=True)
 
-            elif got_message == b_goto_first_search:
+            elif got_message == OtherMenu.b_goto_first_search:
                 bot_message = (
                     'Если вы хотите стать добровольцем ДПСО «ЛизаАлерт», пожалуйста, '
                     '<a href="https://lizaalert.org/forum/viewtopic.php?t=56934">'
@@ -1774,48 +1698,35 @@ def process_update(update: Update) -> str:
                     'официальное обучение, а вы уже готовы выехать на поиск – этот ресурс '
                     'для вас.'
                 )
-                keyboard_other = [[b_view_latest_searches], [b_goto_community], [b_goto_photos], [b_back_to_start]]
+                keyboard_other = [
+                    [OtherMenu.b_view_latest_searches],
+                    [OtherMenu.b_goto_community],
+                    [OtherMenu.b_goto_photos],
+                    [b_back_to_start],
+                ]
                 reply_markup = ReplyKeyboardMarkup(keyboard_other, resize_keyboard=True)
 
-            elif got_message == b_goto_photos:
+            elif got_message == OtherMenu.b_goto_photos:
                 bot_message = (
                     'Если вам хочется окунуться в атмосферу ПСР, приглашаем в замечательный '
                     '<a href="https://t.me/+6LYNNEy8BeI1NGUy">телеграм-канал с красивыми фото с '
                     'поисков</a>. Все фото – сделаны поисковиками во время настоящих ПСР.'
                 )
                 keyboard_other = [
-                    [b_view_latest_searches],
-                    [b_goto_community],
-                    [b_goto_first_search],
+                    [OtherMenu.b_view_latest_searches],
+                    [OtherMenu.b_goto_community],
+                    [OtherMenu.b_goto_first_search],
                     [b_back_to_start],
                 ]
                 reply_markup = ReplyKeyboardMarkup(keyboard_other, resize_keyboard=True)
 
             # special block for flexible menu on notification preferences
-            elif got_message in {
-                b_act_all,
-                b_deact_all,
-                b_act_new_search,
-                b_act_stat_change,
-                b_act_titles,
-                b_act_all_comments,
-                b_set_pref_notif_type,
-                b_deact_stat_change,
-                b_deact_all_comments,
-                b_deact_new_search,
-                b_act_inforg_com,
-                b_deact_inforg_com,
-                b_act_field_trips_new,
-                b_deact_field_trips_new,
-                b_act_field_trips_change,
-                b_deact_field_trips_change,
-                b_act_coords_change,
-                b_deact_coords_change,
-                b_act_first_post_change,
-                b_deact_first_post_change,
-            }:
+            elif (
+                got_message in {MainSettingsMenu.b_set_pref_notif_type, b_act_titles}
+                or got_message in NotificationSettingsMenu.list()
+            ):
                 # save preference for +ALL
-                if got_message == b_act_all:
+                if got_message == NotificationSettingsMenu.b_act_all:
                     bot_message = (
                         'Супер! теперь вы будете получать уведомления в телеграм в случаях: '
                         'появление нового поиска, изменение статуса поиска (стоп, НЖ, НП), '
@@ -1825,12 +1736,12 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'all')
 
                 # save preference for -ALL
-                elif got_message == b_deact_all:
+                elif got_message == NotificationSettingsMenu.b_deact_all:
                     bot_message = 'Вы можете настроить типы получаемых уведомлений более гибко'
                     save_preference(cur, user_id, '-all')
 
                 # save preference for +NEW SEARCHES
-                elif got_message == b_act_new_search:
+                elif got_message == NotificationSettingsMenu.b_act_new_search:
                     bot_message = (
                         'Отлично! Теперь вы будете получать уведомления в телеграм при '
                         'появлении нового поиска. Вы в любой момент можете изменить '
@@ -1839,12 +1750,12 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'new_searches')
 
                 # save preference for -NEW SEARCHES
-                elif got_message == b_deact_new_search:
+                elif got_message == NotificationSettingsMenu.b_deact_new_search:
                     bot_message = 'Записали'
                     save_preference(cur, user_id, '-new_searches')
 
                 # save preference for +STATUS UPDATES
-                elif got_message == b_act_stat_change:
+                elif got_message == NotificationSettingsMenu.b_act_stat_change:
                     bot_message = (
                         'Отлично! теперь вы будете получать уведомления в телеграм при '
                         'изменении статуса поисков (НЖ, НП, СТОП и т.п.). Вы в любой момент '
@@ -1853,7 +1764,7 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'status_changes')
 
                 # save preference for -STATUS UPDATES
-                elif got_message == b_deact_stat_change:
+                elif got_message == NotificationSettingsMenu.b_deact_stat_change:
                     bot_message = 'Записали'
                     save_preference(cur, user_id, '-status_changes')
 
@@ -1863,7 +1774,7 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'title_changes')
 
                 # save preference for +COMMENTS
-                elif got_message == b_act_all_comments:
+                elif got_message == NotificationSettingsMenu.b_act_all_comments:
                     bot_message = (
                         'Отлично! Теперь все новые комментарии будут у вас! Вы в любой момент '
                         'можете изменить список уведомлений'
@@ -1871,7 +1782,7 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'comments_changes')
 
                 # save preference for -COMMENTS
-                elif got_message == b_deact_all_comments:
+                elif got_message == NotificationSettingsMenu.b_deact_all_comments:
                     bot_message = (
                         'Записали. Мы только оставили вам включенными уведомления о '
                         'комментариях Инфорга. Их тоже можно отключить'
@@ -1879,7 +1790,7 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, '-comments_changes')
 
                 # save preference for +InforgComments
-                elif got_message == b_act_inforg_com:
+                elif got_message == NotificationSettingsMenu.b_act_inforg_com:
                     bot_message = (
                         'Если вы не подписаны на уведомления по всем комментариям, то теперь '
                         'вы будете получать уведомления о комментариях от Инфорга. Если же вы '
@@ -1889,12 +1800,12 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'inforg_comments')
 
                 # save preference for -InforgComments
-                elif got_message == b_deact_inforg_com:
+                elif got_message == NotificationSettingsMenu.b_deact_inforg_com:
                     bot_message = 'Вы отписались от уведомлений по новым комментариям от Инфорга'
                     save_preference(cur, user_id, '-inforg_comments')
 
                 # save preference for +FieldTripsNew
-                elif got_message == b_act_field_trips_new:
+                elif got_message == NotificationSettingsMenu.b_act_field_trips_new:
                     bot_message = (
                         'Теперь вы будете получать уведомления о новых выездах по уже идущим '
                         'поискам. Обратите внимание, что это не рассылка по новым темам на '
@@ -1904,12 +1815,12 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'field_trips_new')
 
                 # save preference for -FieldTripsNew
-                elif got_message == b_deact_field_trips_new:
+                elif got_message == NotificationSettingsMenu.b_deact_field_trips_new:
                     bot_message = 'Вы отписались от уведомлений по новым выездам'
                     save_preference(cur, user_id, '-field_trips_new')
 
                 # save preference for +FieldTripsChange
-                elif got_message == b_act_field_trips_change:
+                elif got_message == NotificationSettingsMenu.b_act_field_trips_change:
                     bot_message = (
                         'Теперь вы будете получать уведомления о ключевых изменениях при '
                         'выездах, в т.ч. изменение или завершение выезда. Обратите внимание, '
@@ -1918,12 +1829,12 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'field_trips_change')
 
                 # save preference for -FieldTripsChange
-                elif got_message == b_deact_field_trips_change:
+                elif got_message == NotificationSettingsMenu.b_deact_field_trips_change:
                     bot_message = 'Вы отписались от уведомлений по изменениям выездов'
                     save_preference(cur, user_id, '-field_trips_change')
 
                 # save preference for +CoordsChange
-                elif got_message == b_act_coords_change:
+                elif got_message == NotificationSettingsMenu.b_act_coords_change:
                     bot_message = (
                         'Если у штаба поменяются координаты (и об этом будет написано в первом '
                         'посте на форуме) – бот уведомит вас об этом'
@@ -1931,12 +1842,12 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'coords_change')
 
                 # save preference for -CoordsChange
-                elif got_message == b_deact_coords_change:
+                elif got_message == NotificationSettingsMenu.b_deact_coords_change:
                     bot_message = 'Вы отписались от уведомлений о смене места (координат) штаба'
                     save_preference(cur, user_id, '-coords_change')
 
                 # save preference for -FirstPostChanges
-                elif got_message == b_act_first_post_change:
+                elif got_message == NotificationSettingsMenu.b_act_first_post_change:
                     bot_message = (
                         'Теперь вы будете получать уведомления о важных изменениях в Первом Посте'
                         ' Инфорга, где обозначено описание каждого поиска'
@@ -1944,7 +1855,7 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, 'first_post_changes')
 
                 # save preference for -FirstPostChanges
-                elif got_message == b_deact_first_post_change:
+                elif got_message == NotificationSettingsMenu.b_deact_first_post_change:
                     bot_message = (
                         'Вы отписались от уведомлений о важных изменениях в Первом Посте'
                         ' Инфорга c описанием каждого поиска'
@@ -1952,7 +1863,7 @@ def process_update(update: Update) -> str:
                     save_preference(cur, user_id, '-first_post_changes')
 
                 # GET what are preferences
-                elif got_message == b_set_pref_notif_type:
+                elif got_message == MainSettingsMenu.b_set_pref_notif_type:
                     prefs = compose_user_preferences_message(cur, user_id)
                     if prefs[0] == 'пока нет включенных уведомлений' or prefs[0] == 'неизвестная настройка':
                         bot_message = 'Выберите, какие уведомления вы бы хотели получать'
@@ -1963,44 +1874,47 @@ def process_update(update: Update) -> str:
                 else:
                     bot_message = 'empty message'
 
-                if got_message == b_act_all:
-                    keyboard_notifications_flexible = [[b_deact_all], [b_back_to_start]]
-                elif got_message == b_deact_all:
+                if got_message == NotificationSettingsMenu.b_act_all:
+                    keyboard_notifications_flexible = [[NotificationSettingsMenu.b_deact_all], [b_back_to_start]]
+                elif got_message == NotificationSettingsMenu.b_deact_all:
                     keyboard_notifications_flexible = [
-                        [b_act_all],
-                        [b_deact_new_search],
-                        [b_deact_stat_change],
-                        [b_act_all_comments],
-                        [b_deact_inforg_com],
-                        [b_deact_first_post_change],
+                        [NotificationSettingsMenu.b_act_all],
+                        [NotificationSettingsMenu.b_deact_new_search],
+                        [NotificationSettingsMenu.b_deact_stat_change],
+                        [NotificationSettingsMenu.b_act_all_comments],
+                        [NotificationSettingsMenu.b_deact_inforg_com],
+                        [NotificationSettingsMenu.b_deact_first_post_change],
                         [b_back_to_start],
                     ]
                 else:
                     # getting the list of user notification preferences
                     prefs = compose_user_preferences_message(cur, user_id)
                     keyboard_notifications_flexible = [
-                        [b_act_all],
-                        [b_act_new_search],
-                        [b_act_stat_change],
-                        [b_act_all_comments],
-                        [b_act_inforg_com],
-                        [b_act_first_post_change],
+                        [NotificationSettingsMenu.b_act_all],
+                        [NotificationSettingsMenu.b_act_new_search],
+                        [NotificationSettingsMenu.b_act_stat_change],
+                        [NotificationSettingsMenu.b_act_all_comments],
+                        [NotificationSettingsMenu.b_act_inforg_com],
+                        [NotificationSettingsMenu.b_act_first_post_change],
                         [b_back_to_start],
                     ]
 
                     for line in prefs[1]:
                         if line == 'all':
-                            keyboard_notifications_flexible = [[b_deact_all], [b_back_to_start]]
+                            keyboard_notifications_flexible = [
+                                [NotificationSettingsMenu.b_deact_all],
+                                [b_back_to_start],
+                            ]
                         elif line == 'new_searches':
-                            keyboard_notifications_flexible[1] = [b_deact_new_search]
+                            keyboard_notifications_flexible[1] = [NotificationSettingsMenu.b_deact_new_search]
                         elif line == 'status_changes':
-                            keyboard_notifications_flexible[2] = [b_deact_stat_change]
+                            keyboard_notifications_flexible[2] = [NotificationSettingsMenu.b_deact_stat_change]
                         elif line == 'comments_changes':
-                            keyboard_notifications_flexible[3] = [b_deact_all_comments]
+                            keyboard_notifications_flexible[3] = [NotificationSettingsMenu.b_deact_all_comments]
                         elif line == 'inforg_comments':
-                            keyboard_notifications_flexible[4] = [b_deact_inforg_com]
+                            keyboard_notifications_flexible[4] = [NotificationSettingsMenu.b_deact_inforg_com]
                         elif line == 'first_post_changes':
-                            keyboard_notifications_flexible[5] = [b_deact_first_post_change]
+                            keyboard_notifications_flexible[5] = [NotificationSettingsMenu.b_deact_first_post_change]
 
                 reply_markup = ReplyKeyboardMarkup(keyboard_notifications_flexible, resize_keyboard=True)
 
