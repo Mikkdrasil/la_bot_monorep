@@ -855,3 +855,160 @@ def check_saved_topic_types(cur, user: int) -> list:
     logging.info(f'{saved_pref=}')
 
     return saved_pref
+
+
+def set_search_follow_mode(cur: cursor, user_id: int, new_value: bool) -> None:
+    filter_name_value = ['whitelist'] if new_value else ['']
+    logging.info(f'{filter_name_value=}')
+    cur.execute(
+        """INSERT INTO user_pref_search_filtering (user_id, filter_name) values (%s, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET filter_name=%s;""",
+        (user_id, filter_name_value, filter_name_value),
+    )
+    return None
+
+
+def get_search_follow_mode(cur, user_id: int):
+    cur.execute("""SELECT filter_name FROM user_pref_search_filtering WHERE user_id=%s LIMIT 1;""", (user_id,))
+    result_fetched = cur.fetchone()
+    result = result_fetched and 'whitelist' in result_fetched[0]
+    return result
+
+
+def delete_last_user_inline_dialogue(cur, user_id: int) -> None:
+    """Delete form DB the user's last interaction via inline buttons"""
+
+    cur.execute("""DELETE FROM communications_last_inline_msg WHERE user_id=%s;""", (user_id,))
+    return None
+
+
+def get_last_user_inline_dialogue(cur, user_id: int) -> list:
+    """Get from DB the user's last interaction via inline buttons"""
+
+    cur.execute("""SELECT message_id FROM communications_last_inline_msg WHERE user_id=%s;""", (user_id,))
+    message_id_lines = cur.fetchall()
+
+    message_id_list = []
+    if message_id_lines and len(message_id_lines) > 0:
+        for message_id_line in message_id_lines:
+            message_id_list.append(message_id_line[0])
+
+    return message_id_list
+
+
+def save_last_user_inline_dialogue(cur, user_id: int, message_id: int) -> None:
+    """Save to DB the user's last interaction via inline buttons"""
+
+    cur.execute(
+        """INSERT INTO communications_last_inline_msg 
+                    (user_id, timestamp, message_id) values (%s, CURRENT_TIMESTAMP AT TIME ZONE 'UTC', %s)
+                    ON CONFLICT (user_id, message_id) DO 
+                    UPDATE SET timestamp=CURRENT_TIMESTAMP AT TIME ZONE 'UTC';""",
+        (user_id, message_id),
+    )
+    return None
+
+
+def compose_msg_on_user_setting_fullness(cur, user_id: int) -> Union[str, None]:
+    """Create a text of message, which describes the degree on how complete user's profile is.
+    More settings set – more complete profile it. It's done to motivate users to set the most tailored settings."""
+
+    if not cur or not user_id:
+        return None
+
+    try:
+        cur.execute(
+            """SELECT
+                            user_id 
+                            , CASE WHEN role IS NOT NULL THEN TRUE ELSE FALSE END as role 
+                            , CASE WHEN (SELECT TRUE FROM user_pref_age WHERE user_id=%s LIMIT 1) 
+                                THEN TRUE ELSE FALSE END AS age
+                            , CASE WHEN (SELECT TRUE FROM user_coordinates WHERE user_id=%s LIMIT 1) 
+                                THEN TRUE ELSE FALSE END AS coords    
+                            , CASE WHEN (SELECT TRUE FROM user_pref_radius WHERE user_id=%s LIMIT 1) 
+                                THEN TRUE ELSE FALSE END AS radius
+                            , CASE WHEN (SELECT TRUE FROM user_pref_region WHERE user_id=%s LIMIT 1) 
+                                THEN TRUE ELSE FALSE END AS region
+                            , CASE WHEN (SELECT TRUE FROM user_pref_topic_type WHERE user_id=%s LIMIT 1) 
+                                THEN TRUE ELSE FALSE END AS topic_type
+                            , CASE WHEN (SELECT TRUE FROM user_pref_urgency WHERE user_id=%s LIMIT 1) 
+                                THEN TRUE ELSE FALSE END AS urgency
+                            , CASE WHEN (SELECT TRUE FROM user_preferences WHERE user_id=%s 
+                                AND preference!='bot_news' LIMIT 1) 
+                                THEN TRUE ELSE FALSE END AS notif_type
+                            , CASE WHEN (SELECT TRUE FROM user_regional_preferences WHERE user_id=%s LIMIT 1) 
+                                THEN TRUE ELSE FALSE END AS region_old
+                            , CASE WHEN (SELECT TRUE FROM user_forum_attributes WHERE user_id=%s
+                                AND status = 'verified' LIMIT 1) 
+                                THEN TRUE ELSE FALSE END AS forum
+                        FROM users WHERE user_id=%s;
+                        """,
+            (
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+            ),
+        )
+
+        raw_data = cur.fetchone()
+
+        if not raw_data:
+            return None
+
+        (
+            _,
+            pref_role,
+            pref_age,
+            pref_coords,
+            pref_radius,
+            pref_region,
+            pref_topic_type,
+            pref_urgency,
+            pref_notif_type,
+            pref_region_old,
+            pref_forum,
+        ) = raw_data
+
+        list_of_settings = [pref_notif_type, pref_region_old, pref_coords, pref_radius, pref_age, pref_forum]
+        user_score = int(round(sum(list_of_settings) / len(list_of_settings) * 100, 0))
+
+        logging.info(f'List of user settings activation: {list_of_settings=}')
+        logging.info(f'User settings completeness score is {user_score}')
+
+        if user_score == 100:
+            return None
+
+        user_score_emoji = (
+            f'{user_score // 10}\U0000fe0f\U000020e3{user_score - (user_score // 10) * 10}\U0000fe0f\U000020e3'
+        )
+        message_text = (
+            f'Вы настроили бот на {user_score_emoji}%.\n\nЧтобы сделать бот максимально эффективным '
+            f'именно для вас, рекомендуем настроить следующие параметры:\n'
+        )
+        if not pref_notif_type:
+            message_text += ' - Тип уведомлений,\n'
+        if not pref_region_old:
+            message_text += ' - Регион,\n'
+        if not pref_coords:
+            message_text += ' - Домашние координаты,\n'
+        if not pref_radius:
+            message_text += ' - Максимальный радиус,\n'
+        if not pref_age:
+            message_text += ' - Возрастные группы БВП,\n'
+        if not pref_forum:
+            message_text += ' - Связать бот с форумом ЛА,\n'
+        message_text = message_text[:-2]
+
+        return message_text
+
+    except Exception as e:
+        logging.info('Exception in "compose_msg_on_user_setting_fullness" function')
+        logging.exception(e)
+        return None

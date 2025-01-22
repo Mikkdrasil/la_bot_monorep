@@ -53,12 +53,12 @@ def test_compose_msg_on_all_last_searches():
 
 
 def test_compose_msg_on_all_last_searches_ikb():
-    res = run_smoke(main.compose_msg_on_all_last_searches_ikb)
+    res = run_smoke(communicate._utils.services.compose_msg_on_all_last_searches_ikb)
     pass
 
 
 def test_compose_msg_on_user_setting_fullness():
-    res = run_smoke(main.compose_msg_on_user_setting_fullness)
+    res = run_smoke(communicate._utils.database.compose_msg_on_user_setting_fullness)
     pass
 
 
@@ -68,7 +68,7 @@ def test_compose_user_preferences_message():
 
 
 def test_delete_last_user_inline_dialogue():
-    res = run_smoke(main.delete_last_user_inline_dialogue)
+    res = run_smoke(communicate._utils.database.delete_last_user_inline_dialogue)
     pass
 
 
@@ -113,7 +113,7 @@ def test_get_last_bot_msg():
 
 
 def test_get_last_user_inline_dialogue():
-    res = run_smoke(main.get_last_user_inline_dialogue)
+    res = run_smoke(communicate._utils.database.get_last_user_inline_dialogue)
     pass
 
 
@@ -123,7 +123,7 @@ def test_get_param_if_exists():
 
 
 def test_get_search_follow_mode():
-    res = run_smoke(main.get_search_follow_mode)
+    res = run_smoke(communicate._utils.database.get_search_follow_mode)
     pass
 
 
@@ -173,12 +173,12 @@ def test_make_api_call():
 
 
 def test_manage_if_moscow():
-    res = run_smoke(main.manage_if_moscow)
+    res = run_smoke(communicate._utils.services.manage_if_moscow)
     pass
 
 
 def test_manage_linking_to_forum():
-    res = run_smoke(main.manage_linking_to_forum)
+    res = run_smoke(communicate._utils.services.manage_linking_to_forum)
     pass
 
 
@@ -233,7 +233,7 @@ def test_save_bot_reply_to_user():
 
 
 def test_save_last_user_inline_dialogue():
-    res = run_smoke(main.save_last_user_inline_dialogue)
+    res = run_smoke(communicate._utils.database.save_last_user_inline_dialogue)
     pass
 
 
@@ -278,7 +278,7 @@ def test_search_button_row_ikb():
 
 
 def test_set_search_follow_mode():
-    res = run_smoke(main.set_search_follow_mode)
+    res = run_smoke(communicate._utils.database.set_search_follow_mode)
     pass
 
 

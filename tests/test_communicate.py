@@ -24,11 +24,11 @@ def test_update_and_download_list_of_regions():
 def test_manage_search_follow_mode(cur):
     # NO SMOKE TEST communicate.main.manage_search_follow_mode
     user_action = 'search_follow_mode_on'
-    bot_answer = main.manage_search_follow_mode(cur, '1', {'action': user_action}, 2, 3, 'token')
+    bot_answer = communicate._utils.services.manage_search_follow_mode(cur, '1', {'action': user_action}, 2, 3, 'token')
     assert bot_answer == 'Режим выбора поисков для отслеживания включен.'
 
     user_action = 'search_follow_mode_off'
-    bot_answer = main.manage_search_follow_mode(cur, '1', {'action': user_action}, 2, 3, 'token')
+    bot_answer = communicate._utils.services.manage_search_follow_mode(cur, '1', {'action': user_action}, 2, 3, 'token')
     assert bot_answer == 'Режим выбора поисков для отслеживания отключен.'
 
 

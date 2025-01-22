@@ -4,7 +4,7 @@ import logging
 import re
 import urllib
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 from psycopg2.extensions import cursor
@@ -12,9 +12,17 @@ from requests.models import Response
 from telegram import CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, TelegramObject
 
 from _dependencies.commons import Topics, publish_to_pubsub
-from _dependencies.misc import notify_admin, process_sending_message_async
-from communicate._utils.buttons import AllButtons
-from communicate._utils.database import check_saved_topic_types, delete_topic_type, record_topic_type
+from _dependencies.misc import age_writer, notify_admin, process_sending_message_async, time_counter_since_search_start
+from communicate._utils.buttons import AllButtons, search_button_row_ikb
+from communicate._utils.database import (
+    check_if_user_has_no_regions,
+    check_saved_topic_types,
+    delete_topic_type,
+    record_topic_type,
+    save_user_pref_topic_type,
+    set_search_follow_mode,
+)
+from communicate._utils.schemas import SearchSummary
 
 
 def process_block_unblock_user(user_id, user_new_status):
@@ -549,3 +557,239 @@ def manage_search_whiteness(
 
         bot_message = callback_query.message.text
     return bot_message, reply_markup
+
+
+def manage_linking_to_forum(
+    cur: cursor,
+    got_message: str,
+    user_id: int,
+    b_set_forum_nick: str,
+    b_back_to_start: str,
+    bot_request_bfr_usr_msg: str,
+    b_admin_menu: str,
+    b_test_menu: str,
+    b_yes_its_me: str,
+    b_no_its_not_me: str,
+    b_settings: str,
+    reply_markup_main: ReplyKeyboardMarkup,
+) -> Tuple[str, ReplyKeyboardMarkup, Optional[str]]:
+    """manage all interactions regarding connection of telegram and forum user accounts"""
+
+    bot_message, reply_markup, bot_request_aft_usr_msg = None, None, None
+
+    if got_message == b_set_forum_nick:
+        # TODO: if user_is linked to forum so
+        cur.execute(
+            """SELECT forum_username, forum_user_id 
+                       FROM user_forum_attributes 
+                       WHERE status='verified' AND user_id=%s 
+                       ORDER BY timestamp DESC 
+                       LIMIT 1;""",
+            (user_id,),
+        )
+        saved_forum_user = cur.fetchone()
+
+        if not saved_forum_user:
+            bot_message = (
+                'Бот сможет быть еще полезнее, эффективнее и быстрее, если указать ваш аккаунт на форуме '
+                'lizaalert.org\n\n'
+                'Для этого просто введите ответным сообщением своё имя пользователя (логин).\n\n'
+                'Если возникнут ошибки при распознавании – просто скопируйте имя с форума и '
+                'отправьте боту ответным сообщением.'
+            )
+            keyboard = [[b_back_to_start]]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            bot_request_aft_usr_msg = 'input_of_forum_username'
+
+        else:
+            saved_forum_username, saved_forum_user_id = list(saved_forum_user)
+
+            bot_message = (
+                f'Ваш телеграм уже привязан к аккаунту '
+                f'<a href="https://lizaalert.org/forum/memberlist.php?mode=viewprofile&u='
+                f'{saved_forum_user_id}">{saved_forum_username}</a> '
+                f'на форуме ЛизаАлерт. Больше никаких действий касательно аккаунта на форуме не требуется:)'
+            )
+            keyboard = [[b_settings], [b_back_to_start]]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    elif (
+        bot_request_bfr_usr_msg == 'input_of_forum_username'
+        and got_message not in {b_admin_menu, b_back_to_start, b_test_menu}
+        and len(got_message.split()) < 4
+    ):
+        message_for_pubsub = [user_id, got_message]
+        publish_to_pubsub(Topics.parse_user_profile_from_forum, message_for_pubsub)
+        bot_message = 'Сейчас посмотрю, это может занять до 10 секунд...'
+        keyboard = [[b_back_to_start]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    elif got_message in {b_yes_its_me}:
+        # Write "verified" for user
+        cur.execute(
+            """UPDATE user_forum_attributes SET status='verified'
+                WHERE user_id=%s and timestamp =
+                (SELECT MAX(timestamp) FROM user_forum_attributes WHERE user_id=%s);""",
+            (user_id, user_id),
+        )
+
+        bot_message = (
+            'Отлично, мы записали: теперь бот будет понимать, кто вы на форуме.\nЭто поможет '
+            'вам более оперативно получать сообщения о поисках, по которым вы оставляли '
+            'комментарии на форуме.'
+        )
+        keyboard = [[b_settings], [b_back_to_start]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    elif got_message == b_no_its_not_me:
+        bot_message = (
+            'Пожалуйста, тщательно проверьте написание вашего ника на форуме '
+            '(кириллица/латиница, без пробела в конце) и введите его заново'
+        )
+        keyboard = [[b_set_forum_nick], [b_back_to_start]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        bot_request_aft_usr_msg = 'input_of_forum_username'
+
+    elif got_message == b_back_to_start:
+        bot_message = 'возвращаемся в главное меню'
+        reply_markup = reply_markup_main
+
+    return bot_message, reply_markup, bot_request_aft_usr_msg
+
+
+def manage_if_moscow(
+    cur,
+    user_id,
+    username,
+    got_message,
+    b_reg_moscow,
+    b_reg_not_moscow,
+    reply_markup,
+    keyboard_fed_dist_set,
+    bot_message,
+    user_role,
+):
+    """act if user replied either user from Moscow region or from another one"""
+
+    # if user Region is Moscow
+    if got_message == b_reg_moscow:
+        save_onboarding_step(user_id, username, 'moscow_replied')
+        save_onboarding_step(user_id, username, 'region_set')
+        save_user_pref_topic_type(cur, user_id, 'default', user_role)
+
+        if check_if_user_has_no_regions(cur, user_id):
+            # add the New User into table user_regional_preferences
+            # region is Moscow for Active Searches & InfoPod
+            cur.execute(
+                """INSERT INTO user_regional_preferences (user_id, forum_folder_num) values
+                (%s, %s);""",
+                (user_id, 276),
+            )
+            cur.execute(
+                """INSERT INTO user_regional_preferences (user_id, forum_folder_num) values
+                (%s, %s);""",
+                (user_id, 41),
+            )
+            cur.execute(
+                """INSERT INTO user_pref_region (user_id, region_id) values
+                (%s, %s);""",
+                (user_id, 1),
+            )
+
+    # if region is NOT Moscow
+    elif got_message == b_reg_not_moscow:
+        save_onboarding_step(user_id, username, 'moscow_replied')
+
+        bot_message = (
+            'Спасибо, тогда для корректной работы Бота, пожалуйста, выберите свой регион: '
+            'сначала обозначьте Федеральный Округ, '
+            'а затем хотя бы один Регион поисков, чтобы отслеживать поиски в этом регионе. '
+            'Вы в любой момент сможете изменить '
+            'список регионов через настройки бота.'
+        )
+        reply_markup = ReplyKeyboardMarkup(keyboard_fed_dist_set, resize_keyboard=True)
+
+    else:
+        bot_message = None
+        reply_markup = None
+
+    return bot_message, reply_markup
+
+
+def manage_search_follow_mode(
+    cur: cursor, user_id: int, user_callback: dict, callback_id: str, callback_query, bot_token: str
+) -> str | None:
+    """Switches search following mode on/off"""
+
+    logging.info(f'{callback_query=}, {user_id=}')
+    # when user pushed INLINE BUTTON for topic following
+    if user_callback and user_callback['action'] == 'search_follow_mode_on':
+        set_search_follow_mode(cur, user_id, True)
+        bot_message = 'Режим выбора поисков для отслеживания включен.'
+
+    elif user_callback and user_callback['action'] == 'search_follow_mode_off':
+        set_search_follow_mode(cur, user_id, False)
+        bot_message = 'Режим выбора поисков для отслеживания отключен.'
+
+    send_callback_answer_to_api(bot_token, callback_id, bot_message)
+
+    return bot_message
+
+
+def compose_msg_on_all_last_searches_ikb(cur: cursor, region: int, user_id: int) -> List:
+    """Compose a part of message on the list of recent searches"""
+    # issue#425 it is ikb variant of the above function, returns data formated for inline keyboard
+    # 1st element of returned list is general info and should be popped
+    # rest elements are searches to be showed as inline buttons
+
+    pre_url = 'https://lizaalert.org/forum/viewtopic.php?t='
+    ikb = []
+
+    # download the list from SEARCHES sql table
+    cur.execute(
+        """SELECT s2.*, upswl.search_following_mode FROM 
+            (SELECT search_forum_num, search_start_time, display_name, status, status, family_name, age 
+            FROM searches 
+            WHERE forum_folder_id=%(region)s 
+            ORDER BY search_start_time DESC 
+            LIMIT 20) s2 
+        LEFT JOIN search_health_check shc ON s2.search_forum_num=shc.search_forum_num
+        LEFT JOIN user_pref_search_whitelist upswl ON upswl.search_id=s2.search_forum_num and upswl.user_id=%(user_id)s
+        WHERE (shc.status is NULL or shc.status='ok' or shc.status='regular') 
+        ORDER BY s2.search_start_time DESC;""",
+        {'region': region, 'user_id': user_id},
+    )
+
+    database = cur.fetchall()
+
+    for line in database:
+        search = SearchSummary()
+        (
+            search.topic_id,
+            search.start_time,
+            search.display_name,
+            search.new_status,
+            search.status,
+            search.name,
+            search.age,
+            search_following_mode,
+        ) = list(line)
+
+        if not search.display_name:
+            age_string = f' {age_writer(search.age)}' if search.age and search.age != 0 else ''
+            search.display_name = f'{search.name}{age_string}'
+
+        if not search.new_status:
+            search.new_status = search.status
+
+        if search.new_status in {'Ищем', 'Возобновлен'}:
+            search.new_status = f'Ищем {time_counter_since_search_start(search.start_time)[0]}'
+
+        ikb += search_button_row_ikb(
+            search_following_mode,
+            search.new_status,
+            search.topic_id,
+            search.display_name,
+            f'{pre_url}{search.topic_id}',
+        )
+    return ikb

@@ -41,18 +41,22 @@ from communicate._utils.buttons import AllButtons, full_buttons_dict, search_but
 from communicate._utils.database import (
     add_user_sys_role,
     check_if_new_user,
-    check_if_user_has_no_regions,
     check_onboarding_step,
     compose_msg_on_all_last_searches,
+    compose_msg_on_user_setting_fullness,
     compose_user_preferences_message,
+    delete_last_user_inline_dialogue,
     delete_user_coordinates,
     delete_user_sys_role,
     distance_to_search,
     generate_yandex_maps_place_link,
     get_last_bot_msg,
+    get_last_user_inline_dialogue,
+    get_search_follow_mode,
     get_user_reg_folders_preferences,
     get_user_role,
     save_bot_reply_to_user,
+    save_last_user_inline_dialogue,
     save_new_user,
     save_preference,
     save_user_coordinates,
@@ -60,20 +64,24 @@ from communicate._utils.database import (
     save_user_pref_role,
     save_user_pref_topic_type,
     save_user_pref_urgency,
+    set_search_follow_mode,
     show_user_coordinates,
     update_and_download_list_of_regions,
 )
 from communicate._utils.schemas import SearchSummary
 from communicate._utils.services import (
+    compose_msg_on_all_last_searches_ikb,
     make_api_call,
     manage_age,
+    manage_if_moscow,
+    manage_linking_to_forum,
     manage_radius,
+    manage_search_follow_mode,
     manage_search_whiteness,
     manage_topic_type,
     process_block_unblock_user,
     process_response_of_api_call,
     save_onboarding_step,
-    send_callback_answer_to_api,
 )
 
 setup_google_logging()
@@ -85,65 +93,6 @@ logger = logging.getLogger(__name__)
 
 
 standard_modifier = {'on': '✅ ', 'off': '☐ '}
-
-
-def compose_msg_on_all_last_searches_ikb(cur: cursor, region: int, user_id: int) -> List:
-    """Compose a part of message on the list of recent searches"""
-    # issue#425 it is ikb variant of the above function, returns data formated for inline keyboard
-    # 1st element of returned list is general info and should be popped
-    # rest elements are searches to be showed as inline buttons
-
-    pre_url = 'https://lizaalert.org/forum/viewtopic.php?t='
-    ikb = []
-
-    # download the list from SEARCHES sql table
-    cur.execute(
-        """SELECT s2.*, upswl.search_following_mode FROM 
-            (SELECT search_forum_num, search_start_time, display_name, status, status, family_name, age 
-            FROM searches 
-            WHERE forum_folder_id=%(region)s 
-            ORDER BY search_start_time DESC 
-            LIMIT 20) s2 
-        LEFT JOIN search_health_check shc ON s2.search_forum_num=shc.search_forum_num
-        LEFT JOIN user_pref_search_whitelist upswl ON upswl.search_id=s2.search_forum_num and upswl.user_id=%(user_id)s
-        WHERE (shc.status is NULL or shc.status='ok' or shc.status='regular') 
-        ORDER BY s2.search_start_time DESC;""",
-        {'region': region, 'user_id': user_id},
-    )
-
-    database = cur.fetchall()
-
-    for line in database:
-        search = SearchSummary()
-        (
-            search.topic_id,
-            search.start_time,
-            search.display_name,
-            search.new_status,
-            search.status,
-            search.name,
-            search.age,
-            search_following_mode,
-        ) = list(line)
-
-        if not search.display_name:
-            age_string = f' {age_writer(search.age)}' if search.age and search.age != 0 else ''
-            search.display_name = f'{search.name}{age_string}'
-
-        if not search.new_status:
-            search.new_status = search.status
-
-        if search.new_status in {'Ищем', 'Возобновлен'}:
-            search.new_status = f'Ищем {time_counter_since_search_start(search.start_time)[0]}'
-
-        ikb += search_button_row_ikb(
-            search_following_mode,
-            search.new_status,
-            search.topic_id,
-            search.display_name,
-            f'{pre_url}{search.topic_id}',
-        )
-    return ikb
 
 
 def compose_msg_on_active_searches_in_one_reg(cur: cursor, region: int, user_data) -> str:
@@ -410,183 +359,6 @@ def get_param_if_exists(upd: Update, func_input: str):
 
 # issue#425 inspired by manage_topic_type
 # issue#425
-def manage_search_follow_mode(
-    cur: cursor, user_id: int, user_callback: dict, callback_id: str, callback_query, bot_token: str
-) -> str | None:
-    """Switches search following mode on/off"""
-
-    logging.info(f'{callback_query=}, {user_id=}')
-    # when user pushed INLINE BUTTON for topic following
-    if user_callback and user_callback['action'] == 'search_follow_mode_on':
-        set_search_follow_mode(cur, user_id, True)
-        bot_message = 'Режим выбора поисков для отслеживания включен.'
-
-    elif user_callback and user_callback['action'] == 'search_follow_mode_off':
-        set_search_follow_mode(cur, user_id, False)
-        bot_message = 'Режим выбора поисков для отслеживания отключен.'
-
-    send_callback_answer_to_api(bot_token, callback_id, bot_message)
-
-    return bot_message
-
-
-def manage_if_moscow(
-    cur,
-    user_id,
-    username,
-    got_message,
-    b_reg_moscow,
-    b_reg_not_moscow,
-    reply_markup,
-    keyboard_fed_dist_set,
-    bot_message,
-    user_role,
-):
-    """act if user replied either user from Moscow region or from another one"""
-
-    # if user Region is Moscow
-    if got_message == b_reg_moscow:
-        save_onboarding_step(user_id, username, 'moscow_replied')
-        save_onboarding_step(user_id, username, 'region_set')
-        save_user_pref_topic_type(cur, user_id, 'default', user_role)
-
-        if check_if_user_has_no_regions(cur, user_id):
-            # add the New User into table user_regional_preferences
-            # region is Moscow for Active Searches & InfoPod
-            cur.execute(
-                """INSERT INTO user_regional_preferences (user_id, forum_folder_num) values
-                (%s, %s);""",
-                (user_id, 276),
-            )
-            cur.execute(
-                """INSERT INTO user_regional_preferences (user_id, forum_folder_num) values
-                (%s, %s);""",
-                (user_id, 41),
-            )
-            cur.execute(
-                """INSERT INTO user_pref_region (user_id, region_id) values
-                (%s, %s);""",
-                (user_id, 1),
-            )
-
-    # if region is NOT Moscow
-    elif got_message == b_reg_not_moscow:
-        save_onboarding_step(user_id, username, 'moscow_replied')
-
-        bot_message = (
-            'Спасибо, тогда для корректной работы Бота, пожалуйста, выберите свой регион: '
-            'сначала обозначьте Федеральный Округ, '
-            'а затем хотя бы один Регион поисков, чтобы отслеживать поиски в этом регионе. '
-            'Вы в любой момент сможете изменить '
-            'список регионов через настройки бота.'
-        )
-        reply_markup = ReplyKeyboardMarkup(keyboard_fed_dist_set, resize_keyboard=True)
-
-    else:
-        bot_message = None
-        reply_markup = None
-
-    return bot_message, reply_markup
-
-
-def manage_linking_to_forum(
-    cur: cursor,
-    got_message: str,
-    user_id: int,
-    b_set_forum_nick: str,
-    b_back_to_start: str,
-    bot_request_bfr_usr_msg: str,
-    b_admin_menu: str,
-    b_test_menu: str,
-    b_yes_its_me: str,
-    b_no_its_not_me: str,
-    b_settings: str,
-    reply_markup_main: ReplyKeyboardMarkup,
-) -> Tuple[str, ReplyKeyboardMarkup, Optional[str]]:
-    """manage all interactions regarding connection of telegram and forum user accounts"""
-
-    bot_message, reply_markup, bot_request_aft_usr_msg = None, None, None
-
-    if got_message == b_set_forum_nick:
-        # TODO: if user_is linked to forum so
-        cur.execute(
-            """SELECT forum_username, forum_user_id 
-                       FROM user_forum_attributes 
-                       WHERE status='verified' AND user_id=%s 
-                       ORDER BY timestamp DESC 
-                       LIMIT 1;""",
-            (user_id,),
-        )
-        saved_forum_user = cur.fetchone()
-
-        if not saved_forum_user:
-            bot_message = (
-                'Бот сможет быть еще полезнее, эффективнее и быстрее, если указать ваш аккаунт на форуме '
-                'lizaalert.org\n\n'
-                'Для этого просто введите ответным сообщением своё имя пользователя (логин).\n\n'
-                'Если возникнут ошибки при распознавании – просто скопируйте имя с форума и '
-                'отправьте боту ответным сообщением.'
-            )
-            keyboard = [[b_back_to_start]]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            bot_request_aft_usr_msg = 'input_of_forum_username'
-
-        else:
-            saved_forum_username, saved_forum_user_id = list(saved_forum_user)
-
-            bot_message = (
-                f'Ваш телеграм уже привязан к аккаунту '
-                f'<a href="https://lizaalert.org/forum/memberlist.php?mode=viewprofile&u='
-                f'{saved_forum_user_id}">{saved_forum_username}</a> '
-                f'на форуме ЛизаАлерт. Больше никаких действий касательно аккаунта на форуме не требуется:)'
-            )
-            keyboard = [[b_settings], [b_back_to_start]]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    elif (
-        bot_request_bfr_usr_msg == 'input_of_forum_username'
-        and got_message not in {b_admin_menu, b_back_to_start, b_test_menu}
-        and len(got_message.split()) < 4
-    ):
-        message_for_pubsub = [user_id, got_message]
-        publish_to_pubsub(Topics.parse_user_profile_from_forum, message_for_pubsub)
-        bot_message = 'Сейчас посмотрю, это может занять до 10 секунд...'
-        keyboard = [[b_back_to_start]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    elif got_message in {b_yes_its_me}:
-        # Write "verified" for user
-        cur.execute(
-            """UPDATE user_forum_attributes SET status='verified'
-                WHERE user_id=%s and timestamp =
-                (SELECT MAX(timestamp) FROM user_forum_attributes WHERE user_id=%s);""",
-            (user_id, user_id),
-        )
-
-        bot_message = (
-            'Отлично, мы записали: теперь бот будет понимать, кто вы на форуме.\nЭто поможет '
-            'вам более оперативно получать сообщения о поисках, по которым вы оставляли '
-            'комментарии на форуме.'
-        )
-        keyboard = [[b_settings], [b_back_to_start]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    elif got_message == b_no_its_not_me:
-        bot_message = (
-            'Пожалуйста, тщательно проверьте написание вашего ника на форуме '
-            '(кириллица/латиница, без пробела в конце) и введите его заново'
-        )
-        keyboard = [[b_set_forum_nick], [b_back_to_start]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        bot_request_aft_usr_msg = 'input_of_forum_username'
-
-    elif got_message == b_back_to_start:
-        bot_message = 'возвращаемся в главное меню'
-        reply_markup = reply_markup_main
-
-    return bot_message, reply_markup, bot_request_aft_usr_msg
-
-
 async def leave_chat_async(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.leave_chat(chat_id=context.job.chat_id)
 
@@ -928,163 +700,6 @@ def run_onboarding(user_id: int, username: str, onboarding_step_id: int, got_mes
             onboarding_step_id = 80
 
     return onboarding_step_id
-
-
-def compose_msg_on_user_setting_fullness(cur, user_id: int) -> Union[str, None]:
-    """Create a text of message, which describes the degree on how complete user's profile is.
-    More settings set – more complete profile it. It's done to motivate users to set the most tailored settings."""
-
-    if not cur or not user_id:
-        return None
-
-    try:
-        cur.execute(
-            """SELECT
-                            user_id 
-                            , CASE WHEN role IS NOT NULL THEN TRUE ELSE FALSE END as role 
-                            , CASE WHEN (SELECT TRUE FROM user_pref_age WHERE user_id=%s LIMIT 1) 
-                                THEN TRUE ELSE FALSE END AS age
-                            , CASE WHEN (SELECT TRUE FROM user_coordinates WHERE user_id=%s LIMIT 1) 
-                                THEN TRUE ELSE FALSE END AS coords    
-                            , CASE WHEN (SELECT TRUE FROM user_pref_radius WHERE user_id=%s LIMIT 1) 
-                                THEN TRUE ELSE FALSE END AS radius
-                            , CASE WHEN (SELECT TRUE FROM user_pref_region WHERE user_id=%s LIMIT 1) 
-                                THEN TRUE ELSE FALSE END AS region
-                            , CASE WHEN (SELECT TRUE FROM user_pref_topic_type WHERE user_id=%s LIMIT 1) 
-                                THEN TRUE ELSE FALSE END AS topic_type
-                            , CASE WHEN (SELECT TRUE FROM user_pref_urgency WHERE user_id=%s LIMIT 1) 
-                                THEN TRUE ELSE FALSE END AS urgency
-                            , CASE WHEN (SELECT TRUE FROM user_preferences WHERE user_id=%s 
-                                AND preference!='bot_news' LIMIT 1) 
-                                THEN TRUE ELSE FALSE END AS notif_type
-                            , CASE WHEN (SELECT TRUE FROM user_regional_preferences WHERE user_id=%s LIMIT 1) 
-                                THEN TRUE ELSE FALSE END AS region_old
-                            , CASE WHEN (SELECT TRUE FROM user_forum_attributes WHERE user_id=%s
-                                AND status = 'verified' LIMIT 1) 
-                                THEN TRUE ELSE FALSE END AS forum
-                        FROM users WHERE user_id=%s;
-                        """,
-            (
-                user_id,
-                user_id,
-                user_id,
-                user_id,
-                user_id,
-                user_id,
-                user_id,
-                user_id,
-                user_id,
-                user_id,
-            ),
-        )
-
-        raw_data = cur.fetchone()
-
-        if not raw_data:
-            return None
-
-        (
-            _,
-            pref_role,
-            pref_age,
-            pref_coords,
-            pref_radius,
-            pref_region,
-            pref_topic_type,
-            pref_urgency,
-            pref_notif_type,
-            pref_region_old,
-            pref_forum,
-        ) = raw_data
-
-        list_of_settings = [pref_notif_type, pref_region_old, pref_coords, pref_radius, pref_age, pref_forum]
-        user_score = int(round(sum(list_of_settings) / len(list_of_settings) * 100, 0))
-
-        logging.info(f'List of user settings activation: {list_of_settings=}')
-        logging.info(f'User settings completeness score is {user_score}')
-
-        if user_score == 100:
-            return None
-
-        user_score_emoji = (
-            f'{user_score // 10}\U0000fe0f\U000020e3{user_score - (user_score // 10) * 10}\U0000fe0f\U000020e3'
-        )
-        message_text = (
-            f'Вы настроили бот на {user_score_emoji}%.\n\nЧтобы сделать бот максимально эффективным '
-            f'именно для вас, рекомендуем настроить следующие параметры:\n'
-        )
-        if not pref_notif_type:
-            message_text += ' - Тип уведомлений,\n'
-        if not pref_region_old:
-            message_text += ' - Регион,\n'
-        if not pref_coords:
-            message_text += ' - Домашние координаты,\n'
-        if not pref_radius:
-            message_text += ' - Максимальный радиус,\n'
-        if not pref_age:
-            message_text += ' - Возрастные группы БВП,\n'
-        if not pref_forum:
-            message_text += ' - Связать бот с форумом ЛА,\n'
-        message_text = message_text[:-2]
-
-        return message_text
-
-    except Exception as e:
-        logging.info('Exception in "compose_msg_on_user_setting_fullness" function')
-        logging.exception(e)
-        return None
-
-
-def save_last_user_inline_dialogue(cur, user_id: int, message_id: int) -> None:
-    """Save to DB the user's last interaction via inline buttons"""
-
-    cur.execute(
-        """INSERT INTO communications_last_inline_msg 
-                    (user_id, timestamp, message_id) values (%s, CURRENT_TIMESTAMP AT TIME ZONE 'UTC', %s)
-                    ON CONFLICT (user_id, message_id) DO 
-                    UPDATE SET timestamp=CURRENT_TIMESTAMP AT TIME ZONE 'UTC';""",
-        (user_id, message_id),
-    )
-    return None
-
-
-def get_last_user_inline_dialogue(cur, user_id: int) -> list:
-    """Get from DB the user's last interaction via inline buttons"""
-
-    cur.execute("""SELECT message_id FROM communications_last_inline_msg WHERE user_id=%s;""", (user_id,))
-    message_id_lines = cur.fetchall()
-
-    message_id_list = []
-    if message_id_lines and len(message_id_lines) > 0:
-        for message_id_line in message_id_lines:
-            message_id_list.append(message_id_line[0])
-
-    return message_id_list
-
-
-def delete_last_user_inline_dialogue(cur, user_id: int) -> None:
-    """Delete form DB the user's last interaction via inline buttons"""
-
-    cur.execute("""DELETE FROM communications_last_inline_msg WHERE user_id=%s;""", (user_id,))
-    return None
-
-
-def get_search_follow_mode(cur, user_id: int):
-    cur.execute("""SELECT filter_name FROM user_pref_search_filtering WHERE user_id=%s LIMIT 1;""", (user_id,))
-    result_fetched = cur.fetchone()
-    result = result_fetched and 'whitelist' in result_fetched[0]
-    return result
-
-
-def set_search_follow_mode(cur: cursor, user_id: int, new_value: bool) -> None:
-    filter_name_value = ['whitelist'] if new_value else ['']
-    logging.info(f'{filter_name_value=}')
-    cur.execute(
-        """INSERT INTO user_pref_search_filtering (user_id, filter_name) values (%s, %s)
-                    ON CONFLICT (user_id) DO UPDATE SET filter_name=%s;""",
-        (user_id, filter_name_value, filter_name_value),
-    )
-    return None
 
 
 def main(request: Request) -> str:
