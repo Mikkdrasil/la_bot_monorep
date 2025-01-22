@@ -1316,25 +1316,18 @@ def get_param_if_exists(upd: Update, func_input: str):
     return func_output
 
 
+@dataclass
+class AgePeriod:
+    description: str
+    name: str
+    min_age: int
+    max_age: int
+    order: int
+    current: bool = False
+
+
 def manage_age(cur: cursor, user_id: int, user_input: Optional[str]) -> None:
     """Save user Age preference and generate the list of updated Are preferences"""
-
-    class AgePeriod:
-        def __init__(
-            self,
-            description: str = None,
-            name: str = None,
-            current=None,
-            min_age: int = None,
-            max_age: int = None,
-            order: int = None,
-        ):
-            self.desc = description
-            self.name = name
-            self.now = current
-            self.min = min_age
-            self.max = max_age
-            self.order = order
 
     age_list = [
         AgePeriod(description='Маленькие Дети 0-6 лет', name='0-6', min_age=0, max_age=6, order=0),
@@ -1351,7 +1344,7 @@ def manage_age(cur: cursor, user_id: int, user_input: Optional[str]) -> None:
 
         chosen_setting = None
         for line in age_list:
-            if user_new_setting == line.desc:
+            if user_new_setting == line.description:
                 chosen_setting = line
                 break
 
@@ -1359,12 +1352,12 @@ def manage_age(cur: cursor, user_id: int, user_input: Optional[str]) -> None:
             cur.execute(
                 """INSERT INTO user_pref_age (user_id, period_name, period_set_date, period_min, period_max) 
                         values (%s, %s, %s, %s, %s) ON CONFLICT (user_id, period_min, period_max) DO NOTHING;""",
-                (user_id, chosen_setting.name, datetime.datetime.now(), chosen_setting.min, chosen_setting.max),
+                (user_id, chosen_setting.name, datetime.datetime.now(), chosen_setting.min_age, chosen_setting.max_age),
             )
         else:
             cur.execute(
                 """DELETE FROM user_pref_age WHERE user_id=%s AND period_min=%s AND period_max=%s;""",
-                (user_id, chosen_setting.min, chosen_setting.max),
+                (user_id, chosen_setting.min_age, chosen_setting.max_age),
             )
 
     # Block for Generating a list of Buttons
@@ -1376,25 +1369,25 @@ def manage_age(cur: cursor, user_id: int, user_input: Optional[str]) -> None:
         for line_raw in raw_list_of_periods:
             got_min, got_max = int(list(line_raw)[0]), int(list(line_raw)[1])
             for line_a in age_list:
-                if int(line_a.min) == got_min and int(line_a.max) == got_max:
-                    line_a.now = True
+                if int(line_a.min_age) == got_min and int(line_a.max_age) == got_max:
+                    line_a.current = True
     else:
         first_visit = True
         for line_a in age_list:
-            line_a.now = True
+            line_a.current = True
         for line in age_list:
             cur.execute(
                 """INSERT INTO user_pref_age (user_id, period_name, period_set_date, period_min, period_max) 
                         values (%s, %s, %s, %s, %s) ON CONFLICT (user_id, period_min, period_max) DO NOTHING;""",
-                (user_id, line.name, datetime.datetime.now(), line.min, line.max),
+                (user_id, line.name, datetime.datetime.now(), line.min_age, line.max_age),
             )
 
     list_of_buttons = []
     for line in age_list:
-        if line.now:
-            list_of_buttons.append([f'отключить: {line.desc}'])
+        if line.current:
+            list_of_buttons.append([f'отключить: {line.description}'])
         else:
-            list_of_buttons.append([f'включить: {line.desc}'])
+            list_of_buttons.append([f'включить: {line.description}'])
 
     return list_of_buttons, first_visit
 
