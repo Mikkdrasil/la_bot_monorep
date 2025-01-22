@@ -556,3 +556,8 @@ class OtherMenu(str, ExtendedEnum):
     b_goto_community = 'написать разработчику бота'
     b_goto_first_search = 'ознакомиться с информацией для новичка'
     b_goto_photos = 'посмотреть красивые фото с поисков'
+
+
+# Admin - specially keep it for Admin, regular users unlikely will be interested in it
+
+b_act_titles = 'названия'  # these are "Title update notification" button
