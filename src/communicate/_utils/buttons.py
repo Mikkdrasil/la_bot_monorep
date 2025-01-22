@@ -2,6 +2,8 @@ import hashlib
 from enum import Enum
 from typing import Any, Dict
 
+from telegram import KeyboardButton, ReplyKeyboardMarkup
+
 full_buttons_dict = {
     'topic_types': {
         'regular': {'text': 'стандартные активные поиски', 'id': 0},
@@ -561,3 +563,29 @@ class OtherMenu(str, ExtendedEnum):
 # Admin - specially keep it for Admin, regular users unlikely will be interested in it
 
 b_act_titles = 'названия'  # these are "Title update notification" button
+b_orders_done = 'да, заявки поданы'
+b_orders_tbd = 'нет, но я хочу продолжить'
+# TODO - WIP: FORUM
+b_forum_check_nickname = 'указать свой nickname с форума'  # noqa
+b_forum_dont_have = 'у меня нет аккаунта на форуме ЛА'  # noqa
+b_forum_dont_want = 'пропустить / не хочу говорить'  # noqa
+b_yes_its_me = 'да, это я'
+b_no_its_not_me = 'нет, это не я'
+keyboard_main = [[MainMenu.b_map], [MainMenu.b_view_act_searches], [MainMenu.b_settings], [MainMenu.b_other]]
+reply_markup_main = ReplyKeyboardMarkup(keyboard_main, resize_keyboard=True)
+# Settings - coordinates
+b_coords_auto_def = KeyboardButton(text='автоматически определить "домашние координаты"', request_location=True)
+b_coords_man_def = 'ввести "домашние координаты" вручную'
+b_coords_check = 'посмотреть сохраненные "домашние координаты"'
+b_coords_del = 'удалить "домашние координаты"'
+# Dialogue if Region – is Moscow
+b_reg_moscow = 'да, Москва – мой регион'
+b_reg_not_moscow = 'нет, я из другого региона'
+# Settings - Fed Dist - Regions
+b_menu_set_region = 'настроить регион поисков'
+b_admin_menu = 'admin'
+b_test_menu = 'test'
+b_test_search_follow_mode_on = 'test search follow mode on'  # noqa
+b_test_search_follow_mode_off = 'test search follow mode off'
+b_help_yes = 'да, помогите мне настроить бот'
+b_help_no = 'нет, помощь не требуется'

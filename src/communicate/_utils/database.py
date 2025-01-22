@@ -7,7 +7,8 @@ from psycopg2.extensions import cursor
 
 from _dependencies.commons import Topics, publish_to_pubsub
 from _dependencies.misc import age_writer, time_counter_since_search_start
-from communicate._utils.schemas import SearchSummary
+
+from .schemas import SearchSummary
 
 
 # TODO separate db functions and others

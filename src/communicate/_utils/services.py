@@ -15,8 +15,9 @@ from telegram.ext import Application, ContextTypes
 
 from _dependencies.commons import Topics, get_app_config, publish_to_pubsub
 from _dependencies.misc import age_writer, notify_admin, process_sending_message_async, time_counter_since_search_start
-from communicate._utils.buttons import AllButtons, search_button_row_ikb
-from communicate._utils.database import (
+
+from .buttons import AllButtons, search_button_row_ikb
+from .database import (
     check_if_user_has_no_regions,
     check_saved_topic_types,
     compose_msg_on_all_last_searches,
@@ -31,7 +32,7 @@ from communicate._utils.database import (
     save_user_pref_topic_type,
     set_search_follow_mode,
 )
-from communicate._utils.schemas import SearchSummary
+from .schemas import SearchSummary
 
 
 def process_block_unblock_user(user_id, user_new_status):
