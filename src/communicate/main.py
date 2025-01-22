@@ -323,10 +323,10 @@ def process_update(cur, update: Update) -> str:
     # Buttons & Keyboards
     # Start & Main menu
 
-    # # basic markup which will be substituted for all specific cases
-    # reply_markup = reply_markup_main
-    # # placeholder for the New message from bot as reply to "update". Placed here – to avoid errors of GCF
-    # bot_message = ''
+    # basic markup which will be substituted for all specific cases
+    reply_markup = reply_markup_main
+    # placeholder for the New message from bot as reply to "update". Placed here – to avoid errors of GCF
+    bot_message = ''
 
     logging.info(f'Before if got_message and not got_callback: {got_message=}')
 
