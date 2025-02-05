@@ -13,12 +13,12 @@ from sqlalchemy.engine.base import Connection
 from _dependencies.misc import age_writer, notify_admin
 
 from .notif_common import (
+    COORD_FORMAT,
+    COORD_PATTERN,
     WINDOW_FOR_NOTIFICATIONS_DAYS,
     Comment,
     LineInChangeLog,
     MessageNewTopic,
-    coord_format,
-    coord_pattern,
 )
 
 
@@ -130,7 +130,7 @@ def get_coords_from_list(input_list):
     coords_in_text = []
 
     for line in input_list:
-        coords_in_text += re.findall(coord_pattern, line)
+        coords_in_text += re.findall(COORD_PATTERN, line)
 
     if not (coords_in_text and len(coords_in_text) == 1):
         return None, None
@@ -142,8 +142,8 @@ def get_coords_from_list(input_list):
         return None, None
 
     try:
-        got_lat = coord_format.format(float(coords_as_list[0]))
-        got_lon = coord_format.format(float(coords_as_list[1]))
+        got_lat = COORD_FORMAT.format(float(coords_as_list[0]))
+        got_lon = COORD_FORMAT.format(float(coords_as_list[1]))
         return got_lat, got_lon
 
     except Exception as e:  # noqa
@@ -183,7 +183,7 @@ def compose_com_msg_on_first_post_change(record: LineInChangeLog) -> str:
                 message += '➕Добавлено:\n'
                 for line in list_of_additions:
                     # majority of coords in RU: lat in [30-80], long in [20-180]
-                    updated_line = re.sub(coord_pattern, '<code>\g<0></code>', line)
+                    updated_line = re.sub(COORD_PATTERN, '<code>\g<0></code>', line)
                     message += f'{updated_line}\n'
         else:
             message = message_dict['message']
@@ -193,8 +193,8 @@ def compose_com_msg_on_first_post_change(record: LineInChangeLog) -> str:
     del_lat, del_lon = get_coords_from_list(list_of_deletions)
 
     if old_lat and old_lon:
-        old_lat = coord_format.format(float(old_lat))
-        old_lon = coord_format.format(float(old_lon))
+        old_lat = COORD_FORMAT.format(float(old_lat))
+        old_lon = COORD_FORMAT.format(float(old_lon))
 
     if add_lat and add_lon and del_lat and del_lon and (add_lat != del_lat or add_lon != del_lon):
         distance, direction = define_dist_and_dir_to_search(del_lat, del_lon, add_lat, add_lon)

@@ -29,15 +29,17 @@ from ._utils.enrich import (
     enrich_users_list_with_age_periods,
     enrich_users_list_with_radius,
 )
-from ._utils.notif_common import LineInChangeLog, User, coord_format
+from ._utils.notif_common import COORD_FORMAT, LineInChangeLog, User
 
 setup_google_logging()
 
 
 INTERVAL_TO_CHECK_PARALLEL_FUNCTION_SECONDS = 130
+FUNC_NAME = 'compose_notifications'
 
 stat_list_of_recipients = []  # list of users who received notification on new search
 fib_list = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987]
+CLEANER_RE = re.compile('<.*?>')
 
 
 def sql_connect() -> sqlalchemy.engine.Engine:
@@ -555,7 +557,7 @@ def crop_user_list(conn: sqlalchemy.engine.Connection, users_list_incoming, user
     return users_list_outcome
 
 
-def record_notification_statistics(conn):
+def record_notification_statistics(conn: sqlalchemy.engine.Connection) -> None:
     """records +1 into users' statistics of new searches notification. needed only for usability tips"""
 
     global stat_list_of_recipients
@@ -580,11 +582,9 @@ def record_notification_statistics(conn):
         logging.error('Recording statistics in notification script failed' + repr(e))
         logging.exception(e)
 
-    return None
-
 
 def iterate_over_all_users(
-    conn: sqlalchemy.engine.Connection, admins_list, new_record, list_of_users, function_id
+    conn: sqlalchemy.engine.Connection, admins_list, new_record: LineInChangeLog, list_of_users, function_id
 ) -> LineInChangeLog:
     """initiates a full cycle for all messages composition for all the users"""
     global stat_list_of_recipients
@@ -592,7 +592,6 @@ def iterate_over_all_users(
     stat_list_of_recipients = []  # still not clear why w/o it – saves data from prev iterations
     number_of_situations_checked = 0
     number_of_messages_sent = 0
-    cleaner = re.compile('<.*?>')
 
     try:
         # skip ignored lines which don't require a notification
@@ -601,12 +600,9 @@ def iterate_over_all_users(
             logging.info('Iterations over all Users and Updates are done (record Ignored)')
             return new_record
 
-        s_lat = new_record.search_latitude
-        s_lon = new_record.search_longitude
         topic_id = new_record.forum_search_num
         change_type = new_record.change_type
         change_log_id = new_record.change_id
-        topic_type_id = new_record.topic_type_id
 
         users_who_should_not_be_informed, this_record_was_processed_already, mailing_id = process_mailing_id(
             conn, change_log_id, topic_id, change_type
@@ -618,142 +614,16 @@ def iterate_over_all_users(
         publish_to_pubsub(Topics.topic_to_send_notifications, message_for_pubsub)
 
         for user in list_of_users:
-            u_lat = user.user_latitude
-            u_lon = user.user_longitude
-            region_to_show = new_record.region if user.user_in_multi_folders else None
-            message = ''
             number_of_situations_checked += 1
-
-            # start composing individual messages (specific user on specific situation)
-            if change_type == 0:  # new topic: new search, new event
-                num_of_msgs_sent_already = user.user_new_search_notifs
-
-                if topic_type_id in {0, 1, 2, 3, 4, 5}:  # if it's a new search
-                    message = compose_individual_message_on_new_search(
-                        new_record, s_lat, s_lon, u_lat, u_lon, region_to_show, num_of_msgs_sent_already
-                    )
-                else:  # new event
-                    message = new_record.message[0]
-
-            elif change_type == 1 and topic_type_id in {0, 1, 2, 3, 4, 5}:  # search status change
-                message = new_record.message[0]
-                if user.user_in_multi_folders and new_record.message[1]:
-                    message += new_record.message[1]
-
-            elif change_type == 2:  # 'title_change':
-                message = new_record.message
-
-            elif change_type == 3:  # 'replies_num_change':
-                message = new_record.message[0]
-
-            elif change_type == 4:  # 'inforg_replies':
-                message = new_record.message[0]
-                if user.user_in_multi_folders and new_record.message[1]:
-                    message += new_record.message[1]
-                if new_record.message[2]:
-                    message += new_record.message[2]
-
-            elif change_type == 8:  # first_post_change
-                message = compose_individual_message_on_first_post_change(new_record, region_to_show)
-
-            # TODO: to delete msg_group at all ?
-            # messages followed by coordinates (sendMessage + sendLocation) have same group
-            msg_group_id = get_the_new_group_id(conn) if change_type in {0, 8} else None
-            # not None for new_search, field_trips_new, field_trips_change,  coord_change
-
-            # define if user received this message already
-            this_user_was_notified = False
-
-            if this_record_was_processed_already:
-                this_user_was_notified = get_from_sql_if_was_notified_already(
-                    conn, user.user_id, 'text', new_record.change_id
-                )
-
-                logging.info(f'this user was notified already {user.user_id}, {this_user_was_notified}')
-                if user.user_id in users_who_should_not_be_informed:
-                    logging.info('this user is in the list of non-notifiers')
-                else:
-                    logging.info('this user is NOT in the list of non-notifiers')
-
-            if message and not this_user_was_notified:
-                # TODO: make text more compact within 50 symbols
-                message_without_html = re.sub(cleaner, '', message)
-
-                message_params = {'parse_mode': 'HTML', 'disable_web_page_preview': 'True'}
-
-                # for the new searches we add a link to web_app map
-                if change_type == 0:
-                    map_button = {'text': 'Смотреть на Карте Поисков', 'web_app': {'url': get_app_config().web_app_url}}
-                    message_params['reply_markup'] = {'inline_keyboard': [[map_button]]}
-
-                # TODO: Debug only - to delete
-                print(
-                    f'what we are saving to SQL: {mailing_id}, {user.user_id}, {message_without_html}, '
-                    f'{message_params}, {msg_group_id}, {change_log_id}'
-                )
-                # TODO: Debug only - to delete
-
-                # record into SQL table notif_by_user
-                save_to_sql_notif_by_user(
-                    conn,
-                    mailing_id,
-                    user.user_id,
-                    message,
-                    message_without_html,
-                    'text',
-                    message_params,
-                    msg_group_id,
-                    change_log_id,
-                )
-
-                # for user tips in "new search" notifs – to increase sent messages counter
-                if change_type == 0 and topic_type_id in {0, 1, 2, 3, 4, 5}:  # 'new_search':
-                    stat_list_of_recipients.append(user.user_id)
-
-                # save to SQL the sendLocation notification for "new search"
-                if change_type in {0} and topic_type_id in {0, 1, 2, 3, 4, 5} and s_lat and s_lon:
-                    # 'new_search',
-                    message_params = {'latitude': s_lat, 'longitude': s_lon}
-
-                    # record into SQL table notif_by_user (not text, but coords only)
-                    save_to_sql_notif_by_user(
-                        conn,
-                        mailing_id,
-                        user.user_id,
-                        None,
-                        None,
-                        'coords',
-                        message_params,
-                        msg_group_id,
-                        change_log_id,
-                    )
-                if change_type == 8:
-                    try:
-                        list_of_coords = re.findall(r'<code>', message)
-                        if list_of_coords and len(list_of_coords) == 1:
-                            # that would mean that there's only 1 set of new coordinates and hence we can
-                            # send the dedicated sendLocation message
-                            both_coordinates = re.search(r'(?<=<code>).{5,100}(?=</code>)', message).group()
-                            if both_coordinates:
-                                new_lat = re.search(r'^[\d.]{2,12}(?=\D)', both_coordinates).group()
-                                new_lon = re.search(r'(?<=\D)[\d.]{2,12}$', both_coordinates).group()
-                                message_params = {'latitude': new_lat, 'longitude': new_lon}
-                                save_to_sql_notif_by_user(
-                                    conn,
-                                    mailing_id,
-                                    user.user_id,
-                                    None,
-                                    None,
-                                    'coords',
-                                    message_params,
-                                    msg_group_id,
-                                    change_log_id,
-                                )
-                    except Exception as ee:
-                        logging.info('exception happened')
-                        logging.exception(ee)
-
-                number_of_messages_sent += 1
+            iterate_users_generate_one_notification(
+                conn,
+                new_record,
+                number_of_messages_sent,
+                users_who_should_not_be_informed,
+                this_record_was_processed_already,
+                mailing_id,
+                user,
+            )
 
         # mark this line as all-processed
         new_record.processed = 'yes'
@@ -766,6 +636,146 @@ def iterate_over_all_users(
     return new_record
 
 
+def iterate_users_generate_one_notification(
+    conn: sqlalchemy.engine.Connection,
+    new_record: LineInChangeLog,
+    number_of_messages_sent,
+    users_who_should_not_be_informed,
+    this_record_was_processed_already,
+    mailing_id,
+    user: User,
+):
+    change_type = new_record.change_type
+    change_log_id = new_record.change_id
+
+    s_lat = new_record.search_latitude
+    s_lon = new_record.search_longitude
+    topic_type_id = new_record.topic_type_id
+    region_to_show = new_record.region if user.user_in_multi_folders else None
+    message = ''
+
+    # define if user received this message already
+    this_user_was_notified = False
+    if this_record_was_processed_already:
+        this_user_was_notified = get_from_sql_if_was_notified_already(conn, user.user_id, 'text', new_record.change_id)
+
+        logging.info(f'this user was notified already {user.user_id}, {this_user_was_notified}')
+        if user.user_id in users_who_should_not_be_informed:
+            logging.info('this user is in the list of non-notifiers')
+        else:
+            logging.info('this user is NOT in the list of non-notifiers')
+    if this_user_was_notified:
+        return
+
+    # start composing individual messages (specific user on specific situation)
+    if change_type == 0:  # new topic: new search, new event
+        if topic_type_id in {0, 1, 2, 3, 4, 5}:  # if it's a new search
+            message = compose_individual_message_on_new_search(new_record, user, region_to_show)
+        else:  # new event
+            message = new_record.message[0]
+
+    elif change_type == 1 and topic_type_id in {0, 1, 2, 3, 4, 5}:  # search status change
+        message = new_record.message[0]
+        if user.user_in_multi_folders and new_record.message[1]:
+            message += new_record.message[1]
+
+    elif change_type == 2:  # 'title_change':
+        message = new_record.message
+
+    elif change_type == 3:  # 'replies_num_change':
+        message = new_record.message[0]
+
+    elif change_type == 4:  # 'inforg_replies':
+        message = new_record.message[0]
+        if user.user_in_multi_folders and new_record.message[1]:
+            message += new_record.message[1]
+        if new_record.message[2]:
+            message += new_record.message[2]
+
+    elif change_type == 8:  # first_post_change
+        message = compose_individual_message_on_first_post_change(new_record, region_to_show)
+
+    if not message:
+        return
+
+    # TODO: to delete msg_group at all ?
+    # messages followed by coordinates (sendMessage + sendLocation) have same group
+    msg_group_id = get_the_new_group_id(conn) if change_type in {0, 8} else None
+    # not None for new_search, field_trips_new, field_trips_change,  coord_change
+
+    number_of_messages_sent += 1  # TODO move out;
+
+    # TODO: make text more compact within 50 symbols
+    message_without_html = re.sub(CLEANER_RE, '', message)
+
+    message_params = {'parse_mode': 'HTML', 'disable_web_page_preview': 'True'}
+
+    # for the new searches we add a link to web_app map
+    if change_type == 0:
+        map_button = {'text': 'Смотреть на Карте Поисков', 'web_app': {'url': get_app_config().web_app_url}}
+        message_params['reply_markup'] = {'inline_keyboard': [[map_button]]}
+
+        # record into SQL table notif_by_user
+    save_to_sql_notif_by_user(
+        conn,
+        mailing_id,
+        user.user_id,
+        message,
+        message_without_html,
+        'text',
+        message_params,
+        msg_group_id,
+        change_log_id,
+    )
+
+    # for user tips in "new search" notifs – to increase sent messages counter
+    if change_type == 0 and topic_type_id in {0, 1, 2, 3, 4, 5}:  # 'new_search':
+        stat_list_of_recipients.append(user.user_id)
+
+        # save to SQL the sendLocation notification for "new search"
+    if change_type in {0} and topic_type_id in {0, 1, 2, 3, 4, 5} and s_lat and s_lon:
+        # 'new_search',
+        message_params = {'latitude': s_lat, 'longitude': s_lon}
+
+        # record into SQL table notif_by_user (not text, but coords only)
+        save_to_sql_notif_by_user(
+            conn,
+            mailing_id,
+            user.user_id,
+            None,
+            None,
+            'coords',
+            message_params,
+            msg_group_id,
+            change_log_id,
+        )
+    if change_type == 8:
+        try:
+            list_of_coords = re.findall(r'<code>', message)
+            if list_of_coords and len(list_of_coords) == 1:
+                # that would mean that there's only 1 set of new coordinates and hence we can
+                # send the dedicated sendLocation message
+                both_coordinates = re.search(r'(?<=<code>).{5,100}(?=</code>)', message).group()
+                if both_coordinates:
+                    new_lat = re.search(r'^[\d.]{2,12}(?=\D)', both_coordinates).group()
+                    new_lon = re.search(r'(?<=\D)[\d.]{2,12}$', both_coordinates).group()
+                    message_params = {'latitude': new_lat, 'longitude': new_lon}
+                    save_to_sql_notif_by_user(
+                        conn,
+                        mailing_id,
+                        user.user_id,
+                        None,
+                        None,
+                        'coords',
+                        message_params,
+                        msg_group_id,
+                        change_log_id,
+                    )
+        except Exception as ee:
+            logging.info('exception happened')
+            logging.exception(ee)
+
+
 def generate_yandex_maps_place_link2(lat, lon, param):
     """generate a link to yandex map with lat/lon"""
 
@@ -775,8 +785,14 @@ def generate_yandex_maps_place_link2(lat, lon, param):
     return msg
 
 
-def compose_individual_message_on_new_search(new_record, s_lat, s_lon, u_lat, u_lon, region_to_show, num_of_sent):
+def compose_individual_message_on_new_search(new_record: LineInChangeLog, user: User, region_to_show):
     """compose individual message for notification of every user on new search"""
+
+    s_lat = new_record.search_latitude
+    s_lon = new_record.search_longitude
+    u_lat = user.user_latitude
+    u_lon = user.user_longitude
+    num_of_sent = user.user_new_search_notifs
 
     place_link = ''
     clickable_coords = ''
@@ -803,7 +819,7 @@ def compose_individual_message_on_new_search(new_record, s_lat, s_lon, u_lat, u_
             direction = f'\n\nОт вас ~{dist} км {direct}'
 
             message += generate_yandex_maps_place_link2(s_lat, s_lon, direction)
-            message += f'\n<code>{coord_format.format(float(s_lat))}, ' f'{coord_format.format(float(s_lon))}</code>'
+            message += f'\n<code>{COORD_FORMAT.format(float(s_lat))}, ' f'{COORD_FORMAT.format(float(s_lon))}</code>'
 
         except Exception as e:
             logging.info(
@@ -841,7 +857,7 @@ def compose_individual_message_on_new_search(new_record, s_lat, s_lon, u_lat, u_
             )
 
     if s_lat and s_lon:
-        clickable_coords = f'<code>{coord_format.format(float(s_lat))}, {coord_format.format(float(s_lon))}</code>'
+        clickable_coords = f'<code>{COORD_FORMAT.format(float(s_lat))}, {COORD_FORMAT.format(float(s_lon))}</code>'
         if u_lat and u_lon:
             dist, direct = define_dist_and_dir_to_search(s_lat, s_lon, u_lat, u_lon)
             dist = int(dist)
@@ -921,7 +937,7 @@ def mark_new_record_as_processed(conn: sqlalchemy.engine.Connection, new_record:
     return None
 
 
-def mark_new_comments_as_processed(conn: sqlalchemy.engine.Connection, record):
+def mark_new_comments_as_processed(conn: sqlalchemy.engine.Connection, record: LineInChangeLog) -> None:
     """mark in SQL table Comments all the comments that were processed at this step, basing on search_forum_id"""
 
     try:
@@ -954,10 +970,7 @@ def mark_new_comments_as_processed(conn: sqlalchemy.engine.Connection, record):
         notify_admin('ERROR: Not able to mark Comments as Processed!')
         # TODO ^^^
 
-    return None
 
-
-FUNC_NAME = 'compose_notifications'
 
 
 def check_if_need_compose_more(conn: sqlalchemy.engine.Connection, function_id: int):
