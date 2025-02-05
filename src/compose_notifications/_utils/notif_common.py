@@ -129,15 +129,10 @@ class LineInChangeLog:
 class User:
     user_id: int = 0
     username_telegram: str | None = None
-    # notification_preferences: str = None
-    # notif_pref_ids_list: list = None
     all_notifs: bool = False
-    # topic_type_pref_ids_list: list = None
     user_latitude: str = ''
     user_longitude: str = ''
-    # user_regions: list = None  # TODO remove
     user_in_multi_folders: bool = False
-    # user_corr_regions: list = None
     user_new_search_notifs: int = 0  # only for statistics and tips for user
     user_role: str = ''  # not used
     age_periods: list = field(default_factory=list)

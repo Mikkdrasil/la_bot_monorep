@@ -356,11 +356,11 @@ class NotificationMaker:
         """mark in SQL table Comments all the comments that were processed at this step, basing on search_forum_id
         TODO it seems that we don't use comments.notification_sent anywhere"""
 
+        # TODO – is it correct that we mark comments processes for any Comments for certain search? Looks
+        #  like we can mark some comments which are not yet processed at all. Probably base on change_id? To be checked
+        if not (self.new_record.processed and not self.new_record.ignore):
+            return
         try:
-            # TODO – is it correct that we mark comments processes for any Comments for certain search? Looks
-            #  like we can mark some comments which are not yet processed at all. Probably base on change_id? To be checked
-            if not (self.new_record.processed and not self.new_record.ignore):
-                return
             if self.new_record.change_type == ChangeType.topic_comment_new:
                 sql_text = sqlalchemy.text("""
                     UPDATE comments SET notification_sent = 'y' WHERE search_forum_num=:a;

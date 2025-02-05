@@ -73,7 +73,6 @@ def call_self_if_need_compose_more(conn: Connection, function_id: int) -> None:
     if check:
         logging.info('we checked – there is still something to compose: re-initiating [compose_notification]')
         message_for_pubsub = {'triggered_by_func_id': function_id, 'text': 're-run from same script'}
-        # TODO remove recursion if possible
         publish_to_pubsub(Topics.topic_for_notification, message_for_pubsub)
     else:
         logging.info('we checked – there is nothing to compose: we are not re-initiating [compose_notification]')
