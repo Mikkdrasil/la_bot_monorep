@@ -8,7 +8,7 @@ from sqlalchemy.engine.base import Connection
 
 from _dependencies.commons import Topics, get_app_config, publish_to_pubsub
 from _dependencies.misc import notify_admin
-from compose_notifications._utils.message_composers import PerconalMessageComposer
+from compose_notifications._utils.message_composers import PersonalMessageComposer
 
 from .message_composers import CommonMessageComposer
 from .notif_common import (
@@ -107,7 +107,7 @@ class NotificationMaker:
     ) -> None:
         change_type = self.new_record.change_type
         topic_type_id = self.new_record.topic_type_id
-        region_to_show = self.new_record.region if user.user_in_multi_folders else None
+        
 
         # TODO move one level upper
         # and think: we really need it?
@@ -122,7 +122,7 @@ class NotificationMaker:
                 return
 
         # start composing individual messages (specific user on specific situation)
-        user_message = PerconalMessageComposer(self.new_record, user, region_to_show).compose_message_for_user()
+        user_message = PersonalMessageComposer(self.new_record).compose_message_for_user(user)
         if not user_message:
             return
 

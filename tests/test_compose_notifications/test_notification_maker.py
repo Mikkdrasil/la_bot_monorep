@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
-from compose_notifications._utils.message_composers import PerconalMessageComposer
+from compose_notifications._utils.message_composers import PersonalMessageComposer
 from compose_notifications._utils.notif_common import ChangeType, LineInChangeLog, SearchFollowingMode, TopicType, User
 from compose_notifications._utils.notifications_maker import (
     NotificationMaker,
@@ -52,7 +52,7 @@ class TestNotificationMaker:
             processed=False,
             search_latitude='60.0000',
             search_longitude='60.0000',
-            message=['a', 'b', 'c'],
+            message_common_part=['a', 'b', 'c'],
         )
         user = UserFactory.build(
             user_latitude='55.0000',
@@ -82,7 +82,7 @@ class TestNotificationMaker:
             processed=False,
             search_latitude='60.0000',
             search_longitude='60.0000',
-            message='<code>56.1234 60.1234</code>',
+            message_common_part='<code>56.1234 60.1234</code>',
         )
         user = UserFactory.build(
             user_latitude='55.0000',

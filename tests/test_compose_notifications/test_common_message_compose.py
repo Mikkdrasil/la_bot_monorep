@@ -83,9 +83,10 @@ class TestCommonMessageComposer:
         record = LineInChageFactory.build(
             topic_type_id=TopicType.search_reverse,
             change_type=change_type,
+            message_common_part='',
         )
         CommonMessageComposer(record).compose()
-        assert not record.message
+        assert not record.message_common_part
 
     def test_topic_new(self):
         record = LineInChageFactory.build(
@@ -96,40 +97,41 @@ class TestCommonMessageComposer:
             activities=['some activity'],
         )
         CommonMessageComposer(record).compose()
-        assert record.message
-        assert 'Новое мероприятие' in record.message[0]
-        assert 'some activity' in record.message[1]
-        assert 'manager2 <code>+79001234567</code>' in record.message[2]
+        assert record.message_common_part
+        assert 'Новое мероприятие' in record.message_common_part[0]
+        assert 'some activity' in record.message_common_part[1]
+        assert 'manager2 <code>+79001234567</code>' in record.message_common_part[2]
 
     def test_topic_status_change(self):
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_status_change,
             topic_type_id=TopicType.search_info_support,
+            message_common_part='',
         )
-        assert not record.message
+        assert not record.message_common_part
         CommonMessageComposer(record).compose()
-        assert record.message
+        assert record.message_common_part
 
     def test_topic_title_change(self):
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_title_change,
         )
         CommonMessageComposer(record).compose()
-        assert record.message
+        assert record.message_common_part
 
     def test_topic_comment_new(self):
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_comment_new,
         )
         CommonMessageComposer(record).compose()
-        assert record.message
+        assert record.message_common_part
 
     def test_topic_inforg_comment_new(self):
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_inforg_comment_new,
         )
         CommonMessageComposer(record).compose()
-        assert record.message
+        assert record.message_common_part
 
     def test_topic_first_post_change_1(self):
         new_value = r"{'del': ['Иван (Иванов)'], 'add': [], 'message': 'Удалено:\n<s>Иван (Иванов)\n</s>'}"
@@ -139,7 +141,10 @@ class TestCommonMessageComposer:
             new_value=new_value,
         )
         CommonMessageComposer(record).compose()
-        assert record.message == '🔀Изменения в первом посте по {region}:\n\n➖Удалено:\n<s>Иван (Иванов)\n</s>'
+        assert (
+            record.message_common_part
+            == '🔀Изменения в первом посте по {region}:\n\n➖Удалено:\n<s>Иван (Иванов)\n</s>'
+        )
 
     def test_topic_first_post_change_2(self):
         new_value = r"{'del': [], 'add': ['Иван (Иванов)'], 'message': 'Добавлено:\n<s>Иван (Иванов)\n</s>'}"
@@ -149,7 +154,7 @@ class TestCommonMessageComposer:
             new_value=new_value,
         )
         CommonMessageComposer(record).compose()
-        assert record.message == '🔀Изменения в первом посте по {region}:\n\n➕Добавлено:\nИван (Иванов)\n'
+        assert record.message_common_part == '🔀Изменения в первом посте по {region}:\n\n➕Добавлено:\nИван (Иванов)\n'
 
     def test_topic_first_post_change_3(self):
         new_value = 'Удалена информация:\
@@ -163,7 +168,7 @@ class TestCommonMessageComposer:
         )
         CommonMessageComposer(record).compose()
         assert (
-            record.message
+            record.message_common_part
             == '🔀Изменения в первом посте по {region}:\n\nУдалена информация:<s>Координаты пропажи: 53.534658, 49.324723</s>'
         )
 
@@ -186,7 +191,7 @@ class TestCommonMessageComposer:
         )
         CommonMessageComposer(record).compose()
         assert (
-            record.message
+            record.message_common_part
             == '🔀Изменения в первом посте по {region}:\n\n➖Удалено:<s>Ожидается выезд!</s>➕Добавлено:Штаб начнёт работать с 14:00 по адресу:Стоянка на заправке Газпромнефть, Маньковский разворот, Сергиево-Посадский г.о.56.376108, 38.108829'
         )
 
@@ -199,7 +204,7 @@ class TestCommonMessageComposer:
         )
         CommonMessageComposer(record).compose()
         assert (
-            record.message
+            record.message_common_part
             == '🔀Изменения в первом посте по {region}:\n\n➕Добавлено:\nНовые координаты <code>57.1234 61.12345</code>\n\n\nКоординаты сместились на ~126 км &#8601;&#xFE0E;'
         )
 

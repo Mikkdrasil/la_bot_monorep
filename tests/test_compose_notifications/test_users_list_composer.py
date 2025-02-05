@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.engine import Connection
 
-from compose_notifications._utils.message_composers import PerconalMessageComposer
+from compose_notifications._utils.message_composers import PersonalMessageComposer
 from compose_notifications._utils.notif_common import ChangeType, LineInChangeLog, SearchFollowingMode, TopicType, User
 from compose_notifications._utils.notifications_maker import (
     NotificationMaker,

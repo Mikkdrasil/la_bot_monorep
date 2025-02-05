@@ -118,7 +118,7 @@ class LineInChangeLog:
     activities: list[str] = field(default_factory=list)
     comments: list[Comment] = field(default_factory=list)
     comments_inforg: list[Comment] = field(default_factory=list)
-    message: Any = None
+    message_common_part: Any = None
     message_object: Any | Message | MessageNewTopic = None  # FIXME - maybe should replace "message"
     processed: bool = False
     managers: str = '[]'
