@@ -13,63 +13,8 @@ class UsersListComposer:
 
     def get_users_list_for_line_in_change_log(self, new_record: LineInChangeLog) -> list[User]:
         list_of_users = self.compose_users_list_from_users(new_record)
-        self.enrich_users_list_with_age_periods(list_of_users)
-        self.enrich_users_list_with_radius(list_of_users)
 
         return list_of_users
-
-    def enrich_users_list_with_age_periods(self, list_of_users: list[User]) -> None:
-        """add the data on Lost people age notification preferences from user_pref_age into users List"""
-
-        try:
-            notif_prefs = self.conn.execute("""
-                SELECT user_id, period_min, period_max FROM user_pref_age;
-                                            """).fetchall()
-
-            if not notif_prefs:
-                return
-
-            number_of_enrichments_old = 0
-            number_of_enrichments = 0
-            for np_line in notif_prefs:
-                new_period = [np_line[1], np_line[2]]
-
-                for u_line in list_of_users:
-                    if u_line.user_id == np_line[0]:
-                        u_line.age_periods.append(new_period)
-                        number_of_enrichments += 1
-
-            logging.info(f'Users List enriched with Age Prefs, OLD num of enrichments is {number_of_enrichments_old}')
-            logging.info(f'Users List enriched with Age Prefs, num of enrichments is {number_of_enrichments}')
-
-        except Exception as e:
-            logging.info('Not able to enrich Users List with Age Prefs')
-            logging.exception(e)
-
-    def enrich_users_list_with_radius(self, list_of_users: list[User]) -> None:
-        """add the data on distance notification preferences from user_pref_radius into users List"""
-
-        try:
-            notif_prefs = self.conn.execute("""
-                SELECT user_id, radius FROM user_pref_radius;
-                                            """).fetchall()
-
-            if not notif_prefs:
-                return None
-
-            number_of_enrichments = 0
-            for np_line in notif_prefs:
-                for u_line in list_of_users:
-                    if u_line.user_id == np_line[0]:
-                        u_line.radius = int(round(np_line[1], 0))
-                        number_of_enrichments += 1
-                        print(f'TEMP - RADIUS user_id = {u_line.user_id}, radius = {u_line.radius}')
-
-            logging.info(f'Users List enriched with Radius, num of enrichments is {number_of_enrichments}')
-
-        except Exception as e:
-            logging.info('Not able to enrich Users List with Radius')
-            logging.exception(e)
 
     def compose_users_list_from_users(self, new_record: LineInChangeLog) -> list[User]:
         """compose the Users list from the tables Users & User Coordinates: one Record = one user"""
@@ -85,30 +30,37 @@ class UsersListComposer:
                     user_list AS (
                         SELECT user_id, username_telegram, role
                         FROM users WHERE status IS NULL or status='unblocked'),
+                    ---
                     user_notif_pref_prep AS (
-                        SELECT user_id, array_agg(pref_id) aS agg
+                        SELECT user_id, array_agg(pref_id) AS agg
                         FROM user_preferences GROUP BY user_id),
+                    ---
                     user_notif_type_pref AS (
                         SELECT user_id, CASE WHEN 30 = ANY(agg) THEN True ELSE False END AS all_notifs
                         FROM user_notif_pref_prep
                         WHERE (30 = ANY(agg) OR :change_type = ANY(agg))
-                            AND NOT (4/*topic_inforg_comment_new*/ = ANY(agg)
-                                AND :change_type = 2/*topic_title_change*/)),/*AK20240409:issue13*/
+                            AND NOT (4 = ANY(agg)  /* 4 is topic_inforg_comment_new */
+                            AND :change_type = 2)), /* 2 is topic_title_change */ /*AK20240409:issue13*/
+                    ---
                     user_folders_prep AS (
                         SELECT user_id, forum_folder_num,
                             CASE WHEN count(forum_folder_num) OVER (PARTITION BY user_id) > 1
                                 THEN TRUE ELSE FALSE END as multi_folder
                         FROM user_regional_preferences),
+                    ---
                     user_folders AS (
                         SELECT user_id, forum_folder_num, multi_folder
                         FROM user_folders_prep WHERE forum_folder_num= :forum_folder),
+                    ---
                     user_topic_pref_prep AS (
                         SELECT user_id, array_agg(topic_type_id) aS agg
                         FROM user_pref_topic_type GROUP BY user_id),
+                    ---
                     user_topic_type_pref AS (
                         SELECT user_id, agg AS all_types
                         FROM user_topic_pref_prep
                         WHERE 30 = ANY(agg) OR :topic_type_id = ANY(agg)),
+                    ---
                     user_short_list AS (
                         SELECT ul.user_id, ul.username_telegram, ul.role , uf.multi_folder, up.all_notifs
                         FROM user_list as ul
@@ -122,17 +74,30 @@ class UsersListComposer:
                             uf.forum_folder_num IS NOT NULL AND
                             up.all_notifs IS NOT NULL AND
                             ut.all_types IS NOT NULL),
+                    ---
                     user_with_loc AS (
                         SELECT u.user_id, u.username_telegram, uc.latitude, uc.longitude,
                             u.role, u.multi_folder, u.all_notifs
                         FROM user_short_list AS u
                         LEFT JOIN user_coordinates as uc
-                        ON u.user_id=uc.user_id)
-                SELECT ns.user_id, ns.username_telegram, ns.latitude, ns.longitude, ns.role,
-                    st.num_of_new_search_notifs, ns.multi_folder, ns.all_notifs
+                        ON u.user_id=uc.user_id),
+                    ---
+                    user_age_prefs AS (
+                        SELECT user_id, array_agg(array[period_min, period_max]) as age_prefs 
+                        FROM user_pref_age 
+                        GROUP BY user_id)
+                ----------------------------------------------------------------
+                SELECT  ns.user_id, ns.username_telegram, ns.latitude, ns.longitude, ns.role,
+                        st.num_of_new_search_notifs, ns.multi_folder, ns.all_notifs, 
+                        upr.radius, uap.age_prefs
                 FROM user_with_loc AS ns
                 LEFT JOIN user_stat st
-                ON ns.user_id=st.user_id
+                    ON ns.user_id=st.user_id
+                LEFT JOIN user_pref_radius upr
+                    ON ns.user_id=upr.user_id
+                LEFT JOIN user_age_prefs AS uap
+                    ON ns.user_id=uap.user_id
+                -----
                 /*action='get_user_list_filtered_by_folder_and_notif_type' */;
                                            """)
 
@@ -160,6 +125,8 @@ class UsersListComposer:
                     user_role=line[4],
                     user_in_multi_folders=line[6],
                     all_notifs=line[7],
+                    radius=int(line[8]) if line[8] is not None else 0,
+                    age_periods=line[9] if line[9] is not None else [],
                 )
                 if line[5] == 'None' or line[5] is None:
                     new_line.user_new_search_notifs = 0
