@@ -205,19 +205,20 @@ class LogRecordExtractor:
             # limit notification sending only for searches started 60 days ago
             # 60 days – is a compromise and can be reviewed if community votes for another setting
             try:
-                FORUM_FOLDERS_OF_SAMARA = {333, 305, 334, 306, 190}
                 latest_when_alert = r_line.start_time + datetime.timedelta(days=WINDOW_FOR_NOTIFICATIONS_DAYS)
-                if latest_when_alert < datetime.datetime.now() and r_line.forum_folder not in FORUM_FOLDERS_OF_SAMARA:
-                    r_line.ignore = True
+                if latest_when_alert < datetime.datetime.now():
+                    FORUM_FOLDERS_OF_SAMARA = {333, 305, 334, 306, 190}
+                    if r_line.forum_folder not in FORUM_FOLDERS_OF_SAMARA:
+                        r_line.ignore = True
 
-                    # DEBUG purposes only
-                    notify_admin(
-                        f'ignoring old search upd {r_line.forum_search_num} with start time {r_line.start_time}'
-                    )
-                # FIXME – 03.12.2023 – checking that Samara is not filtered by 60 days
-                if latest_when_alert < datetime.datetime.now() and r_line.forum_folder in FORUM_FOLDERS_OF_SAMARA:
-                    notify_admin(f'☀️ SAMARA >60 {r_line.link}')
-                # FIXME ^^^
+                        # DEBUG purposes only
+                        notify_admin(
+                            f'ignoring old search upd {r_line.forum_search_num} with start time {r_line.start_time}'
+                        )
+                    # FIXME – 03.12.2023 – checking that Samara is not filtered by 60 days
+                    else:
+                        notify_admin(f'☀️ SAMARA >60 {r_line.link}')
+                    # FIXME ^^^
 
             except:  # noqa
                 pass
@@ -255,19 +256,23 @@ class LogRecordExtractor:
     def enrich_new_record_with_managers(self, r_line: LineInChangeLog) -> None:
         """add the lists of current searches' managers to the New Record"""
 
+        query = sqlalchemy.text("""
+            SELECT attribute_value
+            FROM search_attributes
+            WHERE 
+                attribute_name='managers'
+                AND search_forum_num = :a;
+            ORDER BY id; 
+                                """)
         try:
-            list_of_managers = self.conn.execute("""
-                SELECT search_forum_num, attribute_name, attribute_value
-                FROM search_attributes
-                WHERE attribute_name='managers'
-                ORDER BY id; 
-                                                 """).fetchall()
+            list_of_managers = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
 
             # look for matching Forum Search Numbers in New Records List & Search Managers
+
             for m_line in list_of_managers:
-                # when match is found
-                if r_line.forum_search_num == m_line[0] and m_line[2] != '[]':
-                    r_line.managers = m_line[2]
+                # TODO can be multiple lines with 'managers'?
+                if m_line[0] != '[]':
+                    r_line.managers = m_line[0]
 
             logging.info('New Record enriched with Managers')
 
