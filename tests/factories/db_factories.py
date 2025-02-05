@@ -32,3 +32,26 @@ class NotifByUserFactory(BaseFactory[db_models.NotifByUser]):
     message_params = '{"foo":1}'
     change_log_id = Use(BaseFactory.__random__.randint, 1, 100000000)
     message_type = 'text'
+
+
+class ChangeLogFactory(BaseFactory[db_models.ChangeLog]):
+    pass
+
+
+class UserFactory(BaseFactory[db_models.User]):
+    status = None
+    # message_params = '{"foo":1}'
+    # change_log_id = Use(BaseFactory.__random__.randint, 1, 100000000)
+    # message_type = 'text'
+
+
+class UserPreferenceFactory(BaseFactory[db_models.UserPreference]):
+    pass
+
+
+class UserRegionalPreferenceFactory(BaseFactory[db_models.UserRegionalPreference]):
+    pass
+
+
+class UserPrefTopicTypeFactory(BaseFactory[db_models.UserPrefTopicType]):
+    pass

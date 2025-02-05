@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+import datetime
+from dataclasses import dataclass, field
 from typing import Any
 
 WINDOW_FOR_NOTIFICATIONS_DAYS = 60
@@ -8,9 +9,9 @@ COORD_PATTERN = r'0?[3-8]\d\.\d{1,10}[\s\w,]{0,10}[01]?[2-9]\d\.\d{1,10}'
 
 @dataclass
 class LineInChangeLog:
-    forum_search_num: Any = None
-    topic_type_id: Any = None
-    change_type: Any = None  # it is int from 0 to 99 which represents "change_type" column in change_log
+    forum_search_num: int = None
+    topic_type_id: int = None
+    change_type: int = None  # it is int from 0 to 99 which represents "change_type" column in change_log
     changed_field: Any = None
     change_id: Any = None  # means change_log_id
     new_value: Any = None
@@ -23,14 +24,14 @@ class LineInChangeLog:
     age: Any = None
     age_wording: Any = None
     forum_folder: Any = None
-    activities: Any = None
+    activities: list[int] = field(default_factory=list)
     comments: Any = None
     comments_inforg: Any = None
     message: Any = None
     message_object: Any = None  # FIXME
     processed: Any = None
-    managers: Any = None
-    start_time: Any = None
+    managers: list[str] = field(default_factory=list)
+    start_time: datetime.datetime = field(default_factory=datetime.datetime.now)
     ignore: str = None  # "y"
     region: Any = None
     search_latitude: Any = None
@@ -40,7 +41,7 @@ class LineInChangeLog:
     display_name: Any = None
     age_min: Any = None
     age_max: Any = None
-    clickable_name: Any = None
+    clickable_name: str = ''
     topic_emoji: Any = None
 
 
