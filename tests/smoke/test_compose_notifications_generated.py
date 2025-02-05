@@ -1,5 +1,6 @@
 import pytest
 
+import compose_notifications._utils.users_list_composer
 from compose_notifications import main
 from tests.common import run_smoke
 
@@ -29,18 +30,8 @@ def test_compose_new_records_from_change_log():
     pass
 
 
-def test_compose_users_list_from_users():
-    res = run_smoke(main.compose_users_list_from_users)
-    pass
-
-
 def test_crop_user_list():
     res = run_smoke(main.crop_user_list)
-    pass
-
-
-def test_delete_ended_search_following():
-    res = run_smoke(main.delete_ended_search_following)
     pass
 
 

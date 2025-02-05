@@ -10,6 +10,7 @@ from sqlalchemy.engine import Connection
 
 import compose_notifications._utils.log_record_composer
 import compose_notifications._utils.notif_common
+import compose_notifications._utils.users_list_composer
 from _dependencies.commons import sqlalchemy_get_pool
 from compose_notifications import main
 from compose_notifications._utils.notif_common import get_coords_from_list
@@ -123,7 +124,9 @@ def test_main(
 
 def test_compose_users_list_from_users(user_with_preferences: db_models.User, connection: Connection):
     record = LineInChageFactory.build(forum_folder=1, change_type=0)
-    res = main.compose_users_list_from_users(connection, record)
+
+    users_list_composer = compose_notifications._utils.users_list_composer.UsersListComposer(connection)
+    res = users_list_composer.get_users_list_for_line_in_change_log(record)
     assert res
 
 
