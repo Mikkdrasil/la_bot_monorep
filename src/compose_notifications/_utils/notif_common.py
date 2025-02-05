@@ -258,6 +258,7 @@ def get_coords_from_list(input_list: list[str]) -> tuple[str | None, str | None]
 
 class ChangeLogSavedValue(BaseModel):
     """value that stored in database `change_log.new_value`"""
+
     model_config = ConfigDict(extra='ignore')
 
     deletions: list[str] = Field(default_factory=list, alias='del')

@@ -13,6 +13,7 @@ def create_user_with_preferences(
     topic_type_ids: list[int] = [],
     forum_folder_ids: list[int] = [],
     user_coordinates: tuple[str, str] | None = None,
+    age_periods: list[tuple[int, int]] = [],
     radius: int | None = None,
 ) -> db_models.User:
     user = db_factories.UserFactory.create_sync()
@@ -32,6 +33,11 @@ def create_user_with_preferences(
     if user_coordinates is not None:
         db_factories.UserCoordinateFactory.create_sync(
             user_id=user.user_id, latitude=user_coordinates[0], longitude=user_coordinates[1]
+        )
+
+    for age_period in age_periods:
+        db_factories.UserPrefAgeFactory.create_sync(
+            user_id=user.user_id, period_min=age_period[0], period_max=age_period[1]
         )
 
     if radius is not None:
@@ -134,3 +140,22 @@ def test_coordinates(connection: Connection):
     assert first_user.user_id == user.user_id
     assert first_user.user_latitude == '1.2345'
     assert first_user.user_longitude == '2.3456'
+
+
+def test_one_age_prefs(connection: Connection):
+    record = LineInChageFactory.build(change_type=ChangeType.topic_first_post_change)
+
+    user = create_user_with_preferences(
+        pref_ids=[record.change_type],
+        region_ids=[1],
+        topic_type_ids=[record.topic_type_id],
+        forum_folder_ids=[record.forum_folder],
+        age_periods=[(0, 5), (10, 15)],
+    )
+
+    users_list_composer = UsersListComposer(connection)
+    res = users_list_composer.get_users_list_for_line_in_change_log(record)
+    assert len(res) == 1
+    first_user = res[0]
+    assert first_user.user_id == user.user_id
+    assert first_user.age_periods == [[0, 5], [10, 15]]

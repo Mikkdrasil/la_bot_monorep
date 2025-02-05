@@ -220,3 +220,11 @@ def test_parse_change_log_saved_value_str():
     assert not res.additions
     assert not res.deletions
     assert res.message == 'Внимание! Изменения.'
+
+
+def test_parse_change_log_saved_value_dict_with_extra_fields():
+    """should be parsed too"""
+    saved_value = r"{'del': ['a'], 'add': [], 'foo': 1}"
+
+    res = ChangeLogSavedValue.from_db_saved_value(saved_value)
+    assert res.deletions
