@@ -270,7 +270,10 @@ class LogRecordExtractor:
             logging.info(f'TEMP – TOPIC_TYPE = {r_line.topic_type_id}')
 
             # case: when new search's status is already not "Ищем" – to be ignored
-            if r_line.status != 'Ищем' and r_line.change_type in {0, 8}:  # "new_search" & "first_post_change":
+            if r_line.status != 'Ищем' and r_line.change_type in {
+                ChangeType.topic_new,
+                ChangeType.topic_first_post_change,
+            }:
                 r_line.ignore = True
 
             # limit notification sending only for searches started 60 days ago

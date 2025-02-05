@@ -47,10 +47,8 @@ class NotificationComposer:
 
             mailing_id = self.create_new_mailing_id(change_log_id, topic_id, change_type)
 
-            users_who_should_not_be_informed = self.get_from_sql_list_of_users_with_prepared_message(change_log_id)
             # TODO move to Users composer
-
-            list_of_users = self.crop_user_list(list_of_users, users_who_should_not_be_informed, new_record)
+            list_of_users = self.crop_user_list(list_of_users, new_record)
 
             message_for_pubsub = {'triggered_by_func_id': function_id, 'text': 'initiate notifs send out'}
             publish_to_pubsub(Topics.topic_to_send_notifications, message_for_pubsub)
@@ -59,7 +57,6 @@ class NotificationComposer:
                 number_of_situations_checked += 1
                 self.generate_notification_for_user(
                     new_record,
-                    users_who_should_not_be_informed,
                     mailing_id,
                     user,
                 )
@@ -86,19 +83,13 @@ class NotificationComposer:
         mail_id = raw_data[0]
         logging.info(f'mailing_id = {mail_id}')
 
-        # TODO: do we need this table at all?
-        # record into SQL table notif_mailings_status
-        sql_text = sqlalchemy.text("""
-            INSERT INTO notif_mailing_status (mailing_id, event, event_timestamp)
-            VALUES (:a, :b, :c);
-                                            """)
-        self.conn.execute(sql_text, a=mail_id, b='created', c=datetime.datetime.now())
-
         return mail_id
 
     def check_if_record_was_already_processed(self, change_log_id: int) -> bool:
         # check if this change_log record was somehow processed
-        sql_text = sqlalchemy.text("""SELECT EXISTS (SELECT * FROM notif_mailings WHERE change_log_id=:a);""")
+        sql_text = sqlalchemy.text("""
+            SELECT EXISTS (SELECT * FROM notif_mailings WHERE change_log_id=:a);
+                                   """)
         record_was_processed_already = self.conn.execute(sql_text, a=change_log_id).fetchone()[0]
 
         # TODO: DEBUG
@@ -128,9 +119,7 @@ class NotificationComposer:
         logging.info('list of user with composed messages:')
         logging.info(raw_data_)
 
-        users_who_were_composed = []
-        for line in raw_data_:
-            users_who_were_composed.append(line[0])
+        users_who_were_composed = [line[0] for line in raw_data_]
 
         logging.info('users_who_should_not_be_informed:')
         logging.info(users_who_were_composed)
@@ -140,7 +129,6 @@ class NotificationComposer:
     def crop_user_list(
         self,
         users_list_incoming: list[User],
-        users_should_not_be_informed,
         record: LineInChangeLog,
     ):
         """crop user_list to only affected users
@@ -150,17 +138,11 @@ class NotificationComposer:
 
         users_list_outcome = self._filter_inforg_double_notification_for_users(record, users_list_outcome)
 
-        # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
-        if not (record.age_min or record.age_max):
-            logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
-            # TODO ???
-            return users_list_outcome
-
         users_list_outcome = self._filter_users_by_age_settings(record, users_list_outcome)
 
         users_list_outcome = self._filter_users_by_search_radius(record, users_list_outcome)
 
-        users_list_outcome = self._filter_users_should_not_be_informed(users_should_not_be_informed, users_list_outcome)
+        users_list_outcome = self._filter_users_with_prepared_messages(record, users_list_outcome)
 
         users_list_outcome = self._filter_users_not_following_this_search(record, users_list_outcome)
 
@@ -171,46 +153,40 @@ class NotificationComposer:
     ) -> list[User]:
         # 1. INFORG 2X notifications. crop the list of users, excluding Users who receives all types of notifications
         # (otherwise it will be doubling for them)
-        temp_user_list = []
-        if record.change_type != 4:
+        temp_user_list: list[User] = []
+        if record.change_type != ChangeType.topic_inforg_comment_new:
             logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(users_list_outcome)}')
         else:
             for user_line in users_list_outcome:
                 # if this record is about inforg_comments and user already subscribed to all comments
-                if not user_line.all_notifs:
+                check_passed = not user_line.all_notifs
+                logging.info(
+                    f'Inforg 2x CHECK for {user_line.user_id} is {"OK" if check_passed else "FAIL"}, record {record.change_type}, '
+                    f'user {user_line.user_id} {user_line.all_notifs}. '
+                    f'record {record.forum_search_num}'
+                )
+                if check_passed:
                     temp_user_list.append(user_line)
-                    logging.info(
-                        f'Inforg 2x CHECK for {user_line.user_id} is OK, record {record.change_type}, '
-                        f'user {user_line.user_id} {user_line.all_notifs}. '
-                        f'record {record.forum_search_num}'
-                    )
-                else:
-                    logging.info(
-                        f'Inforg 2x CHECK for {user_line.user_id} is FAILED, record {record.change_type}, '
-                        f'user {user_line.user_id} {user_line.all_notifs}. '
-                        f'record {record.forum_search_num}'
-                    )
             logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(temp_user_list)}')
         return temp_user_list
 
     def _filter_users_by_age_settings(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
+        # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
+        if not (record.age_min or record.age_max):
+            logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
+            return users_list_outcome
+
         temp_user_list: list[User] = []
         search_age_range = (record.age_min, record.age_max)
 
         for user_line in users_list_outcome:
-            user_age_ranges = user_line.age_periods
-            age_requirements_met = check_if_age_requirements_met(search_age_range, user_age_ranges)
+            age_requirements_met = check_if_age_requirements_met(search_age_range, user_line.age_periods)
+            logging.info(
+                f'AGE CHECK for {user_line.user_id} is {"OK" if age_requirements_met else "FAIL"}, record {search_age_range}, '
+                f'user {user_line.age_periods}. record {record.forum_search_num}'
+            )
             if age_requirements_met:
                 temp_user_list.append(user_line)
-                logging.info(
-                    f'AGE CHECK for {user_line.user_id} is OK, record {search_age_range}, '
-                    f'user {user_age_ranges}. record {record.forum_search_num}'
-                )
-            else:
-                logging.info(
-                    f'AGE CHECK for {user_line.user_id} is FAIL, record {search_age_range}, '
-                    f'user {user_age_ranges}. record {record.forum_search_num}'
-                )
 
         logging.info(f'User List crop due to ages: {len(users_list_outcome)} --> {len(temp_user_list)}')
         return temp_user_list
@@ -271,15 +247,13 @@ class NotificationComposer:
             logging.exception(e)
         return temp_user_list
 
-    def _filter_users_should_not_be_informed(
-        self, users_should_not_be_informed, users_list_outcome: list[User]
+    def _filter_users_with_prepared_messages(
+        self, record: LineInChangeLog, users_list_outcome: list[User]
     ) -> list[User]:
         # 4. DOUBLING. crop the list of users, excluding Users who were already notified on this change_log_id
         # TODO do we still need it?
-        temp_user_list = []
-        for user_line in users_list_outcome:
-            if user_line.user_id not in users_should_not_be_informed:
-                temp_user_list.append(user_line)
+        users_with_prepared_messages = self.get_from_sql_list_of_users_with_prepared_message(record.change_log_id)
+        temp_user_list = [user for user in users_list_outcome if user.user_id not in users_with_prepared_messages]
         logging.info(f'User List crop due to doubling: {len(users_list_outcome)} --> {len(temp_user_list)}')
         return temp_user_list
 
@@ -311,20 +285,12 @@ class NotificationComposer:
             rows = self.conn.execute(sql_text_, a=record.forum_search_num, b='👀 ', c='❌ ').fetchall()
             logging.info(f'Crop user list step 5: len(rows)=={len(rows)}')
 
-            users_following = []
-            for row in rows:
-                users_following.append(row[0])
-
-            temp_user_list = []
-            for user_line in users_list_outcome:
-                if user_line.user_id in users_following:
-                    temp_user_list.append(user_line)
+            following_users_ids = [row[0] for row in rows]
+            temp_user_list = [user for user in users_list_outcome if user.user_id in following_users_ids]
 
             logging.info(
                 f'Crop user list step 5: User List crop due to whitelisting: {len(users_list_outcome)} --> {len(temp_user_list)}'
             )
-            # if len(users_list_outcome) - len(temp_user_list) <=20:
-            #     logging.info(f'Crop user list step 5: cropped users: {users_list_outcome - temp_user_list}')
         except Exception as ee:
             logging.info('exception happened')
             logging.exception(ee)
@@ -333,15 +299,12 @@ class NotificationComposer:
     def generate_notification_for_user(
         self,
         new_record: LineInChangeLog,
-        users_who_should_not_be_informed,
         mailing_id,
         user: User,
     ):
         change_type = new_record.change_type
         change_log_id = new_record.change_log_id
 
-        s_lat = new_record.search_latitude
-        s_lon = new_record.search_longitude
         topic_type_id = new_record.topic_type_id
         region_to_show = new_record.region if user.user_in_multi_folders else None
         user_message = ''
@@ -355,11 +318,6 @@ class NotificationComposer:
             )
 
             logging.info(f'this user was notified already {user.user_id}, {this_user_was_notified}')
-            if user.user_id in users_who_should_not_be_informed:
-                logging.info('this user is in the list of non-notifiers')
-            else:
-                logging.info('this user is NOT in the list of non-notifiers')
-
             if this_user_was_notified:
                 return
 
@@ -403,8 +361,8 @@ class NotificationComposer:
         if change_type == ChangeType.topic_new and topic_type_id in SEARCH_TOPIC_TYPES:
             # for user tips in "new search" notifs – to increase sent messages counter
             self.stat_list_of_recipients.append(user.user_id)
-            if s_lat and s_lon:
-                message_params = {'latitude': s_lat, 'longitude': s_lon}
+            if new_record.search_latitude and new_record.search_longitude:
+                message_params = {'latitude': new_record.search_latitude, 'longitude': new_record.search_longitude}
 
             # record into SQL table notif_by_user (not text, but coords only)
             self.save_to_sql_notif_by_user(
@@ -417,7 +375,7 @@ class NotificationComposer:
                 msg_group_id,
                 change_log_id,
             )
-        elif change_type == ChangeType.topic_first_post_change:
+        if change_type == ChangeType.topic_first_post_change:
             try:
                 list_of_coords = re.findall(r'<code>', user_message)
                 if list_of_coords and len(list_of_coords) == 1:

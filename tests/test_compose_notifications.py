@@ -172,3 +172,10 @@ def test_age_requirements_check(search_ages, user_ages, equals):
     from compose_notifications._utils.notifications_maker import check_if_age_requirements_met
 
     assert check_if_age_requirements_met(search_ages, user_ages) == equals
+
+
+def test_define_dist_and_dir_to_search():
+    from compose_notifications._utils.notifications_maker import define_dist_and_dir_to_search
+
+    dist, direction = define_dist_and_dir_to_search('56.1234', '60.56780', '55.1234', '60.56780')
+    assert dist == 111.2
