@@ -59,7 +59,7 @@ def enrich_new_record_with_clickable_name(line: LineInChangeLog) -> None:
         line.clickable_name = f'<a href="{line.link}">{line.title}</a>'
 
 
-def define_dist_and_dir_to_search(search_lat, search_lon, user_let, user_lon):
+def define_dist_and_dir_to_search(search_lat: str, search_lon: str, user_let: float, user_lon: float):
     """define direction & distance from user's home coordinates to search coordinates"""
 
     def calc_bearing(lat_2, lon_2, lat_1, lon_1):

@@ -3,7 +3,7 @@
 import datetime
 import logging
 import re
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 import sqlalchemy
 from sqlalchemy.engine.base import Connection
@@ -194,7 +194,7 @@ def compose_users_list_from_users(conn: Connection, new_record: LineInChangeLog)
     return list_of_users
 
 
-def get_list_of_admins_and_testers(conn):
+def get_list_of_admins_and_testers(conn: Connection) -> tuple[list[int], list[int]]:
     """get the list of users with admin & testers roles from PSQL"""
 
     list_of_admins = []
@@ -315,7 +315,7 @@ def get_from_sql_list_of_users_with_prepared_message(conn: sqlalchemy.engine.Con
     return users_who_were_composed
 
 
-def get_the_new_group_id(conn):
+def get_the_new_group_id(conn: Connection) -> int:
     """define the max message_group_id in notif_by_user and add +1"""
 
     raw_data_ = conn.execute("""SELECT MAX(message_group_id) FROM notif_by_user
@@ -1005,7 +1005,7 @@ def delete_ended_search_following(conn: Connection, new_record: LineInChangeLog)
     return None
 
 
-def main(event, context):  # noqa
+def main(event: dict, context: str) -> Any:  # noqa
     """key function which is initiated by Pub/Sub"""
 
     analytics_start_of_func = datetime.datetime.now()
