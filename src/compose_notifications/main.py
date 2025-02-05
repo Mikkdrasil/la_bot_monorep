@@ -660,7 +660,6 @@ def iterate_users_generate_one_notification(
     message = ''
 
     # define if user received this message already
-    this_user_was_notified = False
     if this_record_was_processed_already:
         this_user_was_notified = get_from_sql_if_was_notified_already(conn, user.user_id, 'text', new_record.change_id)
 
@@ -669,37 +668,12 @@ def iterate_users_generate_one_notification(
             logging.info('this user is in the list of non-notifiers')
         else:
             logging.info('this user is NOT in the list of non-notifiers')
-    if this_user_was_notified:
-        return
+
+        if this_user_was_notified:
+            return
 
     # start composing individual messages (specific user on specific situation)
-    if change_type == 0:  # new topic: new search, new event
-        if topic_type_id in {0, 1, 2, 3, 4, 5}:  # if it's a new search
-            message = compose_individual_message_on_new_search(new_record, user, region_to_show)
-        else:  # new event
-            message = new_record.message[0]
-
-    elif change_type == 1 and topic_type_id in {0, 1, 2, 3, 4, 5}:  # search status change
-        message = new_record.message[0]
-        if user.user_in_multi_folders and new_record.message[1]:
-            message += new_record.message[1]
-
-    elif change_type == 2:  # 'title_change':
-        message = new_record.message
-
-    elif change_type == 3:  # 'replies_num_change':
-        message = new_record.message[0]
-
-    elif change_type == 4:  # 'inforg_replies':
-        message = new_record.message[0]
-        if user.user_in_multi_folders and new_record.message[1]:
-            message += new_record.message[1]
-        if new_record.message[2]:
-            message += new_record.message[2]
-
-    elif change_type == 8:  # first_post_change
-        message = compose_individual_message_on_first_post_change(new_record, region_to_show)
-
+    message = _compose_message(new_record, user, change_type, topic_type_id, region_to_show)
     if not message:
         return
 
@@ -754,7 +728,7 @@ def iterate_users_generate_one_notification(
             msg_group_id,
             change_log_id,
         )
-    if change_type == 8:
+    elif change_type == 8:
         try:
             list_of_coords = re.findall(r'<code>', message)
             if list_of_coords and len(list_of_coords) == 1:
@@ -779,6 +753,38 @@ def iterate_users_generate_one_notification(
         except Exception as ee:
             logging.info('exception happened')
             logging.exception(ee)
+
+
+def _compose_message(new_record: LineInChangeLog, user: User, region_to_show):
+    change_type = new_record.change_type
+    topic_type_id = new_record.topic_type_id
+    if change_type == 0:  # new topic: new search, new event
+        if topic_type_id in {0, 1, 2, 3, 4, 5}:  # if it's a new search
+            message = compose_individual_message_on_new_search(new_record, user, region_to_show)
+        else:  # new event
+            message = new_record.message[0]
+
+    elif change_type == 1 and topic_type_id in {0, 1, 2, 3, 4, 5}:  # search status change
+        message = new_record.message[0]
+        if user.user_in_multi_folders and new_record.message[1]:
+            message += new_record.message[1]
+
+    elif change_type == 2:  # 'title_change':
+        message = new_record.message
+
+    elif change_type == 3:  # 'replies_num_change':
+        message = new_record.message[0]
+
+    elif change_type == 4:  # 'inforg_replies':
+        message = new_record.message[0]
+        if user.user_in_multi_folders and new_record.message[1]:
+            message += new_record.message[1]
+        if new_record.message[2]:
+            message += new_record.message[2]
+
+    elif change_type == 8:  # first_post_change
+        message = compose_individual_message_on_first_post_change(new_record, region_to_show)
+    return message
 
 
 def generate_yandex_maps_place_link2(lat, lon, param):
