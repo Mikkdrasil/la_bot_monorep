@@ -41,7 +41,9 @@ def get_list_of_admins_and_testers(conn: Connection) -> tuple[list[int], list[in
     list_of_testers = []
 
     try:
-        user_roles = conn.execute("""SELECT user_id, role FROM user_roles;""").fetchall()
+        user_roles = conn.execute("""
+            SELECT user_id, role FROM user_roles;
+                                  """).fetchall()
 
         for line in user_roles:
             if line[1] == 'admin':
@@ -63,9 +65,11 @@ def get_list_of_admins_and_testers(conn: Connection) -> tuple[list[int], list[in
 def call_self_if_need_compose_more(conn: Connection, function_id: int) -> None:
     """check if there are any notifications remained to be composed"""
 
-    check = conn.execute("""SELECT search_forum_num, changed_field, new_value, id, change_type FROM change_log
-                            WHERE notification_sent is NULL
-                            OR notification_sent='s' LIMIT 1; """).fetchall()
+    check = conn.execute("""
+        SELECT search_forum_num, changed_field, new_value, id, change_type FROM change_log
+        WHERE notification_sent is NULL
+        OR notification_sent='s' LIMIT 1; 
+                         """).fetchall()
     if check:
         logging.info('we checked – there is still something to compose: re-initiating [compose_notification]')
         message_for_pubsub = {'triggered_by_func_id': function_id, 'text': 're-run from same script'}
@@ -143,9 +147,7 @@ def main(event: dict, context: str) -> Any:  # noqa
     with pool.connect() as conn:
         # compose New Records List: the delta from Change log
         new_record = LogRecordExtractor(conn).get_line()
-        # TODO change to class
 
-        # only if there are updates in Change Log
         if new_record:
             list_of_users = UsersListComposer(conn).get_users_list_for_line_in_change_log(new_record)
 

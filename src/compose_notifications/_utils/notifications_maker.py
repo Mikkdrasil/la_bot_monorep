@@ -75,9 +75,9 @@ class NotificationComposer:
     def create_new_mailing_id(self, change_log_id: int, topic_id: int, change_type) -> int:
         # record into SQL table notif_mailings
         sql_text = sqlalchemy.text("""
-                        INSERT INTO notif_mailings (topic_id, source_script, mailing_type, change_log_id)
-                        VALUES (:a, :b, :c, :d)
-                        RETURNING mailing_id;
+            INSERT INTO notif_mailings (topic_id, source_script, mailing_type, change_log_id)
+            VALUES (:a, :b, :c, :d)
+            RETURNING mailing_id;
                         """)
         raw_data = self.conn.execute(
             sql_text, a=topic_id, b='notifications_script', c=change_type, d=change_log_id
@@ -89,8 +89,8 @@ class NotificationComposer:
         # TODO: do we need this table at all?
         # record into SQL table notif_mailings_status
         sql_text = sqlalchemy.text("""
-                                            INSERT INTO notif_mailing_status (mailing_id, event, event_timestamp)
-                                            VALUES (:a, :b, :c);
+            INSERT INTO notif_mailing_status (mailing_id, event, event_timestamp)
+            VALUES (:a, :b, :c);
                                             """)
         self.conn.execute(sql_text, a=mail_id, b='created', c=datetime.datetime.now())
 
@@ -291,22 +291,22 @@ class NotificationComposer:
         temp_user_list: list[User] = []
         try:
             sql_text_ = sqlalchemy.text("""
-            SELECT u.user_id FROM users u
-            LEFT JOIN user_pref_search_filtering upsf ON upsf.user_id=u.user_id and 'whitelist' = ANY(upsf.filter_name)
-            WHERE upsf.filter_name is not null AND NOT
-            (
-                (	exists(select 1 from user_pref_search_whitelist upswls
-                        JOIN searches s ON search_forum_num=upswls.search_id 
-                        WHERE upswls.user_id=u.user_id and upswls.search_id != :a and upswls.search_following_mode=:b
-                        and s.status != 'СТОП')
-                    AND
-                    not exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:b)
-                ) 
-                OR
-                exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:c)
-            )
-            OR upsf.filter_name is null
-            ;
+                SELECT u.user_id FROM users u
+                LEFT JOIN user_pref_search_filtering upsf ON upsf.user_id=u.user_id and 'whitelist' = ANY(upsf.filter_name)
+                WHERE upsf.filter_name is not null AND NOT
+                (
+                    (	exists(select 1 from user_pref_search_whitelist upswls
+                            JOIN searches s ON search_forum_num=upswls.search_id 
+                            WHERE upswls.user_id=u.user_id and upswls.search_id != :a and upswls.search_following_mode=:b
+                            and s.status != 'СТОП')
+                        AND
+                        not exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:b)
+                    ) 
+                    OR
+                    exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:c)
+                )
+                OR upsf.filter_name is null
+                ;
             """)
             rows = self.conn.execute(sql_text_, a=record.forum_search_num, b='👀 ', c='❌ ').fetchall()
             logging.info(f'Crop user list step 5: len(rows)=={len(rows)}')
@@ -445,9 +445,11 @@ class NotificationComposer:
     def get_the_new_group_id(self) -> int:
         """define the max message_group_id in notif_by_user and add +1"""
 
-        raw_data_ = self.conn.execute("""SELECT MAX(message_group_id) FROM notif_by_user
-        /*action='get_the_new_group_id'*/
-        ;""").fetchone()
+        raw_data_ = self.conn.execute("""
+            SELECT MAX(message_group_id) FROM notif_by_user
+            /*action='get_the_new_group_id'*/
+        ;
+                                      """).fetchone()
 
         if raw_data_[0]:
             next_id = raw_data_[0] + 1
@@ -497,17 +499,17 @@ class NotificationComposer:
 
         # record into SQL table notif_by_user
         sql_text_ = sqlalchemy.text("""
-                            INSERT INTO notif_by_user (
-                                mailing_id,
-                                user_id,
-                                message_content,
-                                message_text,
-                                message_type,
-                                message_params,
-                                message_group_id,
-                                change_log_id,
-                                created)
-                            VALUES (:a, :b, :c, :d, :e, :f, :g, :h, :i);
+            INSERT INTO notif_by_user (
+                mailing_id,
+                user_id,
+                message_content,
+                message_text,
+                message_type,
+                message_params,
+                message_group_id,
+                change_log_id,
+                created)
+            VALUES (:a, :b, :c, :d, :e, :f, :g, :h, :i);
                             """)
 
         self.conn.execute(
@@ -537,12 +539,12 @@ class NotificationComposer:
                 number_to_add = dict_of_user_and_number_of_new_notifs[user_id]
 
                 sql_text = sqlalchemy.text("""
-                INSERT INTO user_stat (user_id, num_of_new_search_notifs)
-                VALUES(:a, :b)
-                ON CONFLICT (user_id) DO
-                UPDATE SET num_of_new_search_notifs = :b +
-                (SELECT num_of_new_search_notifs from user_stat WHERE user_id = :a)
-                WHERE user_stat.user_id = :a;
+                    INSERT INTO user_stat (user_id, num_of_new_search_notifs)
+                    VALUES(:a, :b)
+                    ON CONFLICT (user_id) DO
+                    UPDATE SET num_of_new_search_notifs = :b +
+                    (SELECT num_of_new_search_notifs from user_stat WHERE user_id = :a)
+                    WHERE user_stat.user_id = :a;
                 """)
                 self.conn.execute(sql_text, a=int(user_id), b=int(number_to_add))
 
@@ -569,10 +571,10 @@ class NotificationComposer:
         except Exception as e:
             # FIXME – should be a smarter way to re-process the record instead of just marking everything as processed
             # For Safety's Sake – Update Change_log SQL table, setting 'y' everywhere
-            self.conn.execute(
-                """UPDATE change_log SET notification_sent = 'y' WHERE notification_sent is NULL
-                OR notification_sent='s';"""
-            )
+            self.conn.execute("""
+                UPDATE change_log SET notification_sent = 'y' WHERE notification_sent is NULL
+                OR notification_sent='s';
+                """)
 
             logging.info('Not able to mark Updates as Processed in Change Log')
             logging.exception(e)
@@ -603,12 +605,14 @@ class NotificationComposer:
 
         except Exception as e:
             # TODO – seems a vary vague solution: to mark all
-            sql_text = sqlalchemy.text("""UPDATE comments SET notification_sent = 'y' WHERE notification_sent is Null
-                                        OR notification_sent = 's';""")
+            sql_text = sqlalchemy.text("""
+                UPDATE comments SET notification_sent = 'y' WHERE notification_sent is Null
+                OR notification_sent = 's';
+                                       """)
             self.conn.execute(sql_text)
-            sql_text = sqlalchemy.text(
-                """UPDATE comments SET notif_sent_inforg = 'y' WHERE notif_sent_inforg is Null;"""
-            )
+            sql_text = sqlalchemy.text("""
+                UPDATE comments SET notif_sent_inforg = 'y' WHERE notif_sent_inforg is Null;
+                """)
             self.conn.execute(sql_text)
 
             logging.info('Not able to mark Comments as Processed:')

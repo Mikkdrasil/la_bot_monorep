@@ -105,7 +105,12 @@ class LogRecordExtractor:
     def delete_ended_search_following(self, new_record: LineInChangeLog) -> None:  # issue425
         ### Delete from user_pref_search_whitelist if the search goes to one of ending statuses
 
-        if new_record.change_type == 1 and new_record.status in ['Завершен', 'НЖ', 'НП', 'Найден']:
+        if new_record.change_type == ChangeType.topic_status_change and new_record.status in [
+            'Завершен',
+            'НЖ',
+            'НП',
+            'Найден',
+        ]:
             stmt = sqlalchemy.text("""DELETE FROM user_pref_search_whitelist WHERE search_id=:a;""")
             self.conn.execute(stmt, a=new_record.forum_search_num)
             logging.info(
@@ -207,7 +212,8 @@ class LogRecordExtractor:
 
         try:
             sql_text = sqlalchemy.text(
-                """WITH
+                """
+                WITH
                 s AS (
                     SELECT search_forum_num, forum_search_title, num_of_replies, family_name, age,
                         forum_folder_id, search_start_time, display_name, age_min, age_max, status, city_locations,
@@ -226,7 +232,8 @@ class LogRecordExtractor:
                 SELECT ns.*, f.folder_display_name
                 FROM ns
                 LEFT JOIN geo_folders_view AS f
-                ON ns.forum_folder_id = f.folder_id;"""
+                ON ns.forum_folder_id = f.folder_id;
+                """
             )
 
             s_line = self.conn.execute(sql_text, a=r_line.forum_search_num).fetchone()
@@ -296,12 +303,14 @@ class LogRecordExtractor:
         """add the lists of current searches' activities to New Record"""
 
         try:
-            list_of_activities = self.conn.execute("""SELECT sa.search_forum_num, dsa.activity_name from search_activities sa
-            LEFT JOIN dict_search_activities dsa ON sa.activity_type=dsa.activity_id
-            WHERE
-            sa.activity_type <> '9 - hq closed' AND
-            sa.activity_type <> '8 - info' AND
-            sa.activity_status = 'ongoing' ORDER BY sa.id; """).fetchall()
+            list_of_activities = self.conn.execute("""
+                SELECT sa.search_forum_num, dsa.activity_name from search_activities sa
+                LEFT JOIN dict_search_activities dsa ON sa.activity_type=dsa.activity_id
+                WHERE
+                sa.activity_type <> '9 - hq closed' AND
+                sa.activity_type <> '8 - info' AND
+                sa.activity_status = 'ongoing' ORDER BY sa.id; 
+                                                   """).fetchall()
 
             # look for matching Forum Search Numbers in New Records List & Search Activities
             temp_list_of_activities = []
@@ -322,10 +331,11 @@ class LogRecordExtractor:
 
         try:
             list_of_managers = self.conn.execute("""
-            SELECT search_forum_num, attribute_name, attribute_value
-            FROM search_attributes
-            WHERE attribute_name='managers'
-            ORDER BY id; """).fetchall()
+                SELECT search_forum_num, attribute_name, attribute_value
+                FROM search_attributes
+                WHERE attribute_name='managers'
+                ORDER BY id; 
+                                                 """).fetchall()
 
             # look for matching Forum Search Numbers in New Records List & Search Managers
             for m_line in list_of_managers:
@@ -349,18 +359,22 @@ class LogRecordExtractor:
                 return
 
             if type_of_comments == CommentsType.all:
-                comments = self.conn.execute("""SELECT
-                                            comment_url, comment_text, comment_author_nickname, comment_author_link,
-                                            search_forum_num, comment_num, comment_global_num
-                                        FROM comments WHERE notification_sent IS NULL;""").fetchall()
+                comments = self.conn.execute("""
+                    SELECT
+                    comment_url, comment_text, comment_author_nickname, comment_author_link,
+                    search_forum_num, comment_num, comment_global_num
+                    FROM comments WHERE notification_sent IS NULL;
+                                             """).fetchall()
 
             elif type_of_comments == CommentsType.inforg:
-                comments = self.conn.execute("""SELECT
-                                            comment_url, comment_text, comment_author_nickname, comment_author_link,
-                                            search_forum_num, comment_num, comment_global_num
-                                        FROM comments WHERE notif_sent_inforg IS NULL
-                                        AND LOWER(LEFT(comment_author_nickname,6))='инфорг'
-                                        AND comment_author_nickname!='Инфорг кинологов';""").fetchall()
+                comments = self.conn.execute("""
+                    SELECT
+                    comment_url, comment_text, comment_author_nickname, comment_author_link,
+                    search_forum_num, comment_num, comment_global_num
+                    FROM comments WHERE notif_sent_inforg IS NULL
+                    AND LOWER(LEFT(comment_author_nickname,6))='инфорг'
+                    AND comment_author_nickname!='Инфорг кинологов';
+                                             """).fetchall()
             else:
                 return
 
