@@ -52,7 +52,6 @@ class TestNotificationMaker:
             processed=False,
             search_latitude='60.0000',
             search_longitude='60.0000',
-            message_common_part=['a', 'b', 'c'],
         )
         user = UserFactory.build(
             user_latitude='55.0000',

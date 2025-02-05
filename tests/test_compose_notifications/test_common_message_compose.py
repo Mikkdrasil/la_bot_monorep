@@ -8,7 +8,7 @@ from faker import Faker
 from polyfactory.factories import DataclassFactory
 
 from compose_notifications._utils.message_composers import CommonMessageComposer, PersonalMessageComposer
-from compose_notifications._utils.notif_common import ChangeLogSavedValue, ChangeType, LineInChangeLog, TopicType
+from compose_notifications._utils.notif_common import ChangeLogSavedValue, ChangeType, LineInChangeLog, TopicType, User
 
 faker = Faker('ru_RU')
 
@@ -57,6 +57,11 @@ class TestCommonMessageComposerClickableName:
         assert record.title in record.clickable_name
 
 
+@pytest.fixture
+def user() -> User:
+    return UserFactory.build()
+
+
 class TestMessageComposer:
     @pytest.mark.parametrize(
         'change_type',
@@ -74,17 +79,30 @@ class TestMessageComposer:
             )
         ],
     )
-    def test_message_not_composed(self, change_type: ChangeType):
+    def test_message_not_composed(self, change_type: ChangeType, user: User):
         # these change_types should not produce a message
         record = LineInChageFactory.build(
             topic_type_id=TopicType.search_reverse,
             change_type=change_type,
         )
-        user = UserFactory.build()
         message = PersonalMessageComposer(record).compose_message_for_user(user)
         assert not message
 
-    def test_topic_new(self):
+    def test_topic_new_search(self, user: User):
+        record = LineInChageFactory.build(
+            change_type=ChangeType.topic_new,
+            start_time=datetime.now(),
+            topic_type_id=TopicType.search_regular,
+            managers='["manager1","manager2 +79001234567"]',  # TODO check phone link in separate test
+            activities=['some activity'],
+        )
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        assert message
+        assert 'Новый поиск' in message
+        assert 'some activity' in message
+        assert 'manager2 <code>+79001234567</code>' in message
+
+    def test_topic_new_event(self, user: User):
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_new,
             start_time=datetime.now(),
@@ -92,68 +110,69 @@ class TestMessageComposer:
             managers='["manager1","manager2 +79001234567"]',  # TODO check phone link in separate test
             activities=['some activity'],
         )
-        user = UserFactory.build()
-        message=PersonalMessageComposer(record).compose_message_for_user(user)
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
         assert message
-        assert 'Новое мероприятие' in record.message_common_part[0]
-        assert 'some activity' in record.message_common_part[1]
-        assert 'manager2 <code>+79001234567</code>' in record.message_common_part[2]
+        assert 'Новое мероприятие' in message
+        assert record.clickable_name in message
 
-    def test_topic_status_change(self):
+    def test_topic_status_change(self, user: User):
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_status_change,
             topic_type_id=TopicType.search_info_support,
-            message_common_part='',
         )
-        assert not record.message_common_part
-        CommonMessageComposer(record).compose()
-        assert record.message_common_part
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        assert 'изменение статуса по' in message
+        assert record.clickable_name in message
 
-    def test_topic_title_change(self):
+    def test_topic_title_change(self, user: User):
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_title_change,
+            topic_type_id=TopicType.event,
         )
-        CommonMessageComposer(record).compose()
-        assert record.message_common_part
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        assert 'обновление заголовка мероприятия по' in message
+        assert record.clickable_name in message
 
-    def test_topic_comment_new(self):
+    def test_topic_comment_new(self, user: User):
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_comment_new,
         )
-        CommonMessageComposer(record).compose()
-        assert record.message_common_part
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        assert 'Новые комментарии по поиску' in message
+        assert record.clickable_name in message
 
-    def test_topic_inforg_comment_new(self):
+    def test_topic_inforg_comment_new(self, user: User):
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_inforg_comment_new,
         )
-        CommonMessageComposer(record).compose()
-        assert record.message_common_part
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        assert 'Сообщение от ' in message
+        assert record.clickable_name in message
 
-    def test_topic_first_post_change_1(self):
+    def test_topic_first_post_change_1(self, user: User):
         new_value = r"{'del': ['Иван (Иванов)'], 'add': [], 'message': 'Удалено:\n<s>Иван (Иванов)\n</s>'}"
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_first_post_change,
             topic_type_id=TopicType.search_regular,
             new_value=new_value,
         )
-        CommonMessageComposer(record).compose()
-        assert (
-            record.message_common_part
-            == '🔀Изменения в первом посте по {region}:\n\n➖Удалено:\n<s>Иван (Иванов)\n</s>'
-        )
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
 
-    def test_topic_first_post_change_2(self):
+        assert '🔀Изменения в первом посте по ' in message
+        assert '\n\n➖Удалено:\n<s>Иван (Иванов)\n</s>' in message
+        assert record.clickable_name in message
+
+    def test_topic_first_post_change_2(self, user: User):
         new_value = r"{'del': [], 'add': ['Иван (Иванов)'], 'message': 'Добавлено:\n<s>Иван (Иванов)\n</s>'}"
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_first_post_change,
             topic_type_id=TopicType.search_regular,
             new_value=new_value,
         )
-        CommonMessageComposer(record).compose()
-        assert record.message_common_part == '🔀Изменения в первом посте по {region}:\n\n➕Добавлено:\nИван (Иванов)\n'
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        assert '➕Добавлено:\nИван (Иванов)\n' in message
 
-    def test_topic_first_post_change_3(self):
+    def test_topic_first_post_change_3(self, user: User):
         new_value = 'Удалена информация:\
 <s>Координаты пропажи: 53.534658, 49.324723\
 </s>'
@@ -163,13 +182,10 @@ class TestMessageComposer:
             topic_type_id=TopicType.search_regular,
             new_value=new_value,
         )
-        CommonMessageComposer(record).compose()
-        assert (
-            record.message_common_part
-            == '🔀Изменения в первом посте по {region}:\n\nУдалена информация:<s>Координаты пропажи: 53.534658, 49.324723</s>'
-        )
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        assert 'Удалена информация:<s>Координаты пропажи: 53.534658, 49.324723</s>' in message
 
-    def test_topic_first_post_change_4(self):
+    def test_topic_first_post_change_4(self, user: User):
         new_value = '➖Удалено:\
 <s>Ожидается выезд!\
 </s>\
@@ -186,23 +202,25 @@ class TestMessageComposer:
             search_latitude='56.1234',
             search_longitude='60.1234',
         )
-        CommonMessageComposer(record).compose()
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
         assert (
-            record.message_common_part
-            == '🔀Изменения в первом посте по {region}:\n\n➖Удалено:<s>Ожидается выезд!</s>➕Добавлено:Штаб начнёт работать с 14:00 по адресу:Стоянка на заправке Газпромнефть, Маньковский разворот, Сергиево-Посадский г.о.56.376108, 38.108829'
+            'Удалено:<s>Ожидается выезд!</s>➕Добавлено:Штаб начнёт работать с 14:00 по адресу:Стоянка на заправке Газпромнефть, Маньковский разворот, Сергиево-Посадский г.о.56.376108, 38.108829'
+            in message
         )
 
-    def test_topic_first_post_change_5(self):
+    def test_topic_first_post_change_5(self, user: User):
         new_value = r"{'del': [], 'add': ['Новые координаты 57.1234 61.12345']}"
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_first_post_change,
             topic_type_id=TopicType.search_regular,
             new_value=new_value,
+            search_latitude='56.1234',
+            search_longitude='60.1234',
         )
-        CommonMessageComposer(record).compose()
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
         assert (
-            record.message_common_part
-            == '🔀Изменения в первом посте по {region}:\n\n➕Добавлено:\nНовые координаты <code>57.1234 61.12345</code>\n\n\nКоординаты сместились на ~126 км &#8601;&#xFE0E;'
+            '➕Добавлено:\nНовые координаты <code>57.1234 61.12345</code>\n\n\nКоординаты сместились на ~126 км &#8601;&#xFE0E;'
+            in message
         )
 
 

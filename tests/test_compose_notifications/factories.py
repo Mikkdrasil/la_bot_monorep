@@ -15,4 +15,5 @@ class LineInChangeLogFactory(DataclassFactory[LineInChangeLog]):
 
 
 class UserFactory(DataclassFactory[User]):
-    pass
+    user_latitude = '60.0000'
+    user_longitude = '60.0000'

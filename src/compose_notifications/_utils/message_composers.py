@@ -222,9 +222,9 @@ class CommonMessageComposer:
 
         if topic_type_id == TopicType.event:
             clickable_name = f'🗓️Новое мероприятие!\n{clickable_name}'
-            message.clickable_name = clickable_name
-            return [clickable_name, None, None]
-            line.message_object = message # TODO
+            # message.clickable_name = clickable_name
+            # return [clickable_name, None, None]
+            # line.message_object = message # TODO
 
         # 1. List of activities – user-independent
         msg_1 = ''
@@ -257,7 +257,7 @@ class CommonMessageComposer:
 
         logging.info('msg 2 + msg 1 + msg 3: ' + str(msg_2) + ' // ' + str(msg_1) + ' // ' + str(msg_3))
         return msg_2, msg_1, msg_3  # 1 - person, 2 - activities, 3 - managers
-        line.message_object = message # TODO
+        line.message_object = message  # TODO
 
     def _compose_com_msg_on_status_change(self) -> None:
         """compose the common, user-independent message on search status change"""
@@ -301,7 +301,7 @@ class PersonalMessageComposer:
 
         change_type = self.new_record.change_type
         topic_type_id = self.new_record.topic_type_id
-        
+
         if change_type == ChangeType.topic_new:
             common_message_parts = common_mesage_composer._compose_com_msg_on_new_topic()
             return (
@@ -358,11 +358,6 @@ class PersonalMessageComposer:
         u_lat = user.user_latitude
         u_lon = user.user_longitude
         num_of_sent = user.user_new_search_notifs
-
-        place_link = ''
-        clickable_coords = ''
-        tip_on_click_to_copy = ''
-        tip_on_home_coords = ''
 
         region_wording = f' в регионе {region_to_show}' if region_to_show else ''
 
@@ -423,23 +418,28 @@ class PersonalMessageComposer:
                     '"Домашние координаты" в Настройках Бота.</i>'
                 )
 
-        if s_lat and s_lon:
-            clickable_coords = f'<code>{COORD_FORMAT.format(float(s_lat))}, {COORD_FORMAT.format(float(s_lon))}</code>'
-            if u_lat and u_lon:
-                dist, direct = define_dist_and_dir_to_search(s_lat, s_lon, u_lat, u_lon)
-                dist = int(dist)
-                place = f'От вас ~{dist} км {direct}'
-            else:
-                place = 'Карта'
-            place_link = f'<a href="https://yandex.ru/maps/?pt={s_lon},{s_lat}&z=11&l=map">{place}</a>'
+        # place_link = ''
+        # clickable_coords = ''
+        # tip_on_click_to_copy = ''
+        # tip_on_home_coords = ''
+        #
+        # if s_lat and s_lon:
+        #     clickable_coords = f'<code>{COORD_FORMAT.format(float(s_lat))}, {COORD_FORMAT.format(float(s_lon))}</code>'
+        #     if u_lat and u_lon:
+        #         dist, direct = define_dist_and_dir_to_search(s_lat, s_lon, u_lat, u_lon)
+        #         dist = int(dist)
+        #         place = f'От вас ~{dist} км {direct}'
+        #     else:
+        #         place = 'Карта'
+        #     place_link = f'<a href="https://yandex.ru/maps/?pt={s_lon},{s_lat}&z=11&l=map">{place}</a>'
 
-            if not num_of_sent or num_of_sent in FIB_LIST:
-                tip_on_click_to_copy = '<i>Совет: Координаты и телефоны можно скопировать, нажав на них.</i>'
-                if not u_lat and not u_lon:
-                    tip_on_home_coords = (
-                        '<i>Совет: Чтобы Бот показывал Направление и Расстояние до поиска – просто '
-                        'укажите ваши "Домашние координаты" в Настройках Бота.</i>'
-                    )
+        #     if not num_of_sent or num_of_sent in FIB_LIST:
+        #         tip_on_click_to_copy = '<i>Совет: Координаты и телефоны можно скопировать, нажав на них.</i>'
+        #         if not u_lat and not u_lon:
+        #             tip_on_home_coords = (
+        #                 '<i>Совет: Чтобы Бот показывал Направление и Расстояние до поиска – просто '
+        #                 'укажите ваши "Домашние координаты" в Настройках Бота.</i>'
+        #             )
 
         # TODO - yet not implemented new message template
         # obj = new_record.message_object
