@@ -31,7 +31,7 @@ class LineInChangeLog:
     processed: Any = None
     managers: Any = None
     start_time: Any = None
-    ignore: str = None # "y"
+    ignore: str = None  # "y"
     region: Any = None
     search_latitude: Any = None
     search_longitude: Any = None

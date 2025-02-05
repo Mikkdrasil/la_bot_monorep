@@ -85,7 +85,7 @@ def compose_new_records_from_change_log(conn: Connection) -> LineInChangeLog:
     return new_record
 
 
-def compose_users_list_from_users(conn: Connection, new_record: LineInChangeLog) -> List:
+def compose_users_list_from_users(conn: Connection, new_record: LineInChangeLog) -> list[User]:
     """compose the Users list from the tables Users & User Coordinates: one Record = one user"""
 
     list_of_users = []
@@ -393,7 +393,12 @@ def check_if_age_requirements_met(search_ages, user_ages):
     return requirements_met
 
 
-def crop_user_list(conn: sqlalchemy.engine.Connection, users_list_incoming, users_should_not_be_informed, record):
+def crop_user_list(
+    conn: sqlalchemy.engine.Connection,
+    users_list_incoming: list[User],
+    users_should_not_be_informed,
+    record: LineInChangeLog,
+):
     """crop user_list to only affected users"""
 
     users_list_outcome = users_list_incoming
@@ -584,7 +589,7 @@ def record_notification_statistics(conn: sqlalchemy.engine.Connection) -> None:
 
 
 def iterate_over_all_users(
-    conn: sqlalchemy.engine.Connection, admins_list, new_record: LineInChangeLog, list_of_users, function_id
+    conn: sqlalchemy.engine.Connection, admins_list, new_record: LineInChangeLog, list_of_users: list[User], function_id
 ) -> LineInChangeLog:
     """initiates a full cycle for all messages composition for all the users"""
     global stat_list_of_recipients
@@ -971,8 +976,6 @@ def mark_new_comments_as_processed(conn: sqlalchemy.engine.Connection, record: L
         # TODO ^^^
 
 
-
-
 def check_if_need_compose_more(conn: sqlalchemy.engine.Connection, function_id: int):
     """check if there are any notifications remained to be composed"""
 
@@ -1041,40 +1044,9 @@ def main(event, context):  # noqa
 
         # only if there are updates in Change Log
         if new_record:
-            delete_ended_search_following(conn, new_record)  # issue425
-            # enrich New Records List with all the updates that should be in notifications
-            new_record = enrich_new_record_from_searches(conn, new_record)
-            new_record = enrich_new_record_with_search_activities(conn, new_record)
-            new_record = enrich_new_record_with_managers(conn, new_record)
-            new_record = enrich_new_record_with_comments(conn, 'all', new_record)
-            new_record = enrich_new_record_with_comments(conn, 'inforg', new_record)
-            new_record = enrich_new_record_with_clickable_name(new_record)
-            new_record = enrich_new_record_with_emoji(new_record)
-            new_record = enrich_new_record_with_com_message_texts(new_record)
-
-            # compose Users List: all the notifications recipients' details
-            admins_list, testers_list = get_list_of_admins_and_testers(conn)  # for debug purposes
-            list_of_users = compose_users_list_from_users(conn, new_record)
-            list_of_users = enrich_users_list_with_age_periods(conn, list_of_users)
-            list_of_users = enrich_users_list_with_radius(conn, list_of_users)
-
-            analytics_match_finish = datetime.datetime.now()
-            duration_match = round((analytics_match_finish - analytics_start_of_func).total_seconds(), 2)
-            logging.info(f'time: function match end-to-end – {duration_match} sec')
-
-            # check the matrix: new update - user and initiate sending notifications
-            new_record = iterate_over_all_users(conn, admins_list, new_record, list_of_users, function_id)
-
-            analytics_iterations_finish = datetime.datetime.now()
-            duration_iterations = round((analytics_iterations_finish - analytics_match_finish).total_seconds(), 2)
-            logging.info(f'time: function iterations end-to-end – {duration_iterations} sec')
-
-            # mark all the "new" lines in tables Change Log & Comments as "old"
-            mark_new_record_as_processed(conn, new_record)
-            mark_new_comments_as_processed(conn, new_record)
-
-            # final step – update statistics on how many users received notifications on new searches
-            record_notification_statistics(conn)
+            new_record, analytics_iterations_finish = process_new_record(
+                analytics_start_of_func, function_id, conn, new_record
+            )
 
         check_if_need_compose_more(conn, function_id)
 
@@ -1106,3 +1078,41 @@ def main(event, context):  # noqa
         logging.info('script finished')
 
     pool.dispose()
+
+
+def process_new_record(analytics_start_of_func, function_id, conn, new_record: LineInChangeLog):
+    delete_ended_search_following(conn, new_record)  # issue425
+    # enrich New Records List with all the updates that should be in notifications
+    enrich_new_record_from_searches(conn, new_record)
+    enrich_new_record_with_search_activities(conn, new_record)
+    enrich_new_record_with_managers(conn, new_record)
+    enrich_new_record_with_comments(conn, 'all', new_record)
+    enrich_new_record_with_comments(conn, 'inforg', new_record)
+    enrich_new_record_with_clickable_name(new_record)
+    enrich_new_record_with_emoji(new_record)
+    enrich_new_record_with_com_message_texts(new_record)
+
+    # compose Users List: all the notifications recipients' details
+    admins_list, testers_list = get_list_of_admins_and_testers(conn)  # for debug purposes
+    list_of_users = compose_users_list_from_users(conn, new_record)
+    enrich_users_list_with_age_periods(conn, list_of_users)
+    enrich_users_list_with_radius(conn, list_of_users)
+
+    analytics_match_finish = datetime.datetime.now()
+    duration_match = round((analytics_match_finish - analytics_start_of_func).total_seconds(), 2)
+    logging.info(f'time: function match end-to-end – {duration_match} sec')
+
+    # check the matrix: new update - user and initiate sending notifications
+    new_record = iterate_over_all_users(conn, admins_list, new_record, list_of_users, function_id)
+
+    analytics_iterations_finish = datetime.datetime.now()
+    duration_iterations = round((analytics_iterations_finish - analytics_match_finish).total_seconds(), 2)
+    logging.info(f'time: function iterations end-to-end – {duration_iterations} sec')
+
+    # mark all the "new" lines in tables Change Log & Comments as "old"
+    mark_new_record_as_processed(conn, new_record)
+    mark_new_comments_as_processed(conn, new_record)
+
+    # final step – update statistics on how many users received notifications on new searches
+    record_notification_statistics(conn)
+    return new_record, analytics_iterations_finish

@@ -74,6 +74,11 @@ def test_iterate_over_all_users():
     pass
 
 
+def test_iterate_users_generate_one_notification():
+    res = run_smoke(main.iterate_users_generate_one_notification)
+    pass
+
+
 def test_mark_new_comments_as_processed():
     res = run_smoke(main.mark_new_comments_as_processed)
     pass
@@ -86,6 +91,11 @@ def test_mark_new_record_as_processed():
 
 def test_process_mailing_id():
     res = run_smoke(main.process_mailing_id)
+    pass
+
+
+def test_process_new_record():
+    res = run_smoke(main.process_new_record)
     pass
 
 

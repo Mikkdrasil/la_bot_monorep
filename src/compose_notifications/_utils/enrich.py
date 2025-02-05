@@ -19,10 +19,11 @@ from .notif_common import (
     Comment,
     LineInChangeLog,
     MessageNewTopic,
+    User,
 )
 
 
-def enrich_new_record_with_emoji(line: LineInChangeLog):
+def enrich_new_record_with_emoji(line: LineInChangeLog) -> None:
     """add specific emoji based on topic (search) type"""
 
     topic_type_id = line.topic_type_id
@@ -40,10 +41,8 @@ def enrich_new_record_with_emoji(line: LineInChangeLog):
     else:
         line.topic_emoji = ''
 
-    return line
 
-
-def enrich_new_record_with_clickable_name(line: LineInChangeLog):
+def enrich_new_record_with_clickable_name(line: LineInChangeLog) -> None:
     """add clickable name to the record"""
 
     if line.topic_type_id in {0, 1, 2, 3, 4, 5}:  # if it's search
@@ -58,8 +57,6 @@ def enrich_new_record_with_clickable_name(line: LineInChangeLog):
             line.clickable_name = f'<a href="{line.link}">{name}{age_info}</a>'
     else:  # if it's event or something else
         line.clickable_name = f'<a href="{line.link}">{line.title}</a>'
-
-    return line
 
 
 def define_dist_and_dir_to_search(search_lat, search_lon, user_let, user_lon):
@@ -389,10 +386,8 @@ def compose_com_msg_on_title_change(line: LineInChangeLog):
     return msg
 
 
-def enrich_new_record_with_com_message_texts(line: LineInChangeLog) -> LineInChangeLog:
+def enrich_new_record_with_com_message_texts(line: LineInChangeLog) -> None:
     """add user-independent message text to the New Records"""
-
-    last_line = None
 
     try:
         last_line = line
@@ -417,17 +412,15 @@ def enrich_new_record_with_com_message_texts(line: LineInChangeLog) -> LineInCha
         logging.exception(e)
         logging.info('FOR DEBUG OF ERROR – line is: ' + str(last_line))
 
-    return line
 
-
-def enrich_users_list_with_age_periods(conn: sqlalchemy.engine.Connection, list_of_users):
+def enrich_users_list_with_age_periods(conn: sqlalchemy.engine.Connection, list_of_users: list[User]) -> None:
     """add the data on Lost people age notification preferences from user_pref_age into users List"""
 
     try:
         notif_prefs = conn.execute("""SELECT user_id, period_min, period_max FROM user_pref_age;""").fetchall()
 
         if not notif_prefs:
-            return list_of_users
+            return
 
         number_of_enrichments_old = 0
         number_of_enrichments = 0
@@ -446,10 +439,8 @@ def enrich_users_list_with_age_periods(conn: sqlalchemy.engine.Connection, list_
         logging.info('Not able to enrich Users List with Age Prefs')
         logging.exception(e)
 
-    return list_of_users
 
-
-def enrich_users_list_with_radius(conn: sqlalchemy.engine.Connection, list_of_users):
+def enrich_users_list_with_radius(conn: sqlalchemy.engine.Connection, list_of_users: list[User]) -> None:
     """add the data on distance notification preferences from user_pref_radius into users List"""
 
     try:
@@ -471,8 +462,6 @@ def enrich_users_list_with_radius(conn: sqlalchemy.engine.Connection, list_of_us
     except Exception as e:
         logging.info('Not able to enrich Users List with Radius')
         logging.exception(e)
-
-    return list_of_users
 
 
 def define_family_name(title_string: str, predefined_fam_name: str | None) -> str:
@@ -505,7 +494,7 @@ def define_family_name(title_string: str, predefined_fam_name: str | None) -> st
     return fam_name
 
 
-def enrich_new_record_from_searches(conn: Connection, r_line: LineInChangeLog):
+def enrich_new_record_from_searches(conn: Connection, r_line: LineInChangeLog) -> None:
     """add the additional data from Searches into New Records"""
 
     try:
@@ -539,7 +528,7 @@ def enrich_new_record_from_searches(conn: Connection, r_line: LineInChangeLog):
             logging.info(f'New Record is {r_line}')
             logging.info(f'extract from searches is {s_line}')
             logging.exception('no search in searches table!')
-            return r_line
+            return
 
         r_line.status = s_line[1]
         r_line.link = f'https://lizaalert.org/forum/viewtopic.php?t={r_line.forum_search_num}'
@@ -592,10 +581,8 @@ def enrich_new_record_from_searches(conn: Connection, r_line: LineInChangeLog):
         logging.error('Not able to enrich New Records from Searches:')
         logging.exception(e)
 
-    return r_line
 
-
-def enrich_new_record_with_search_activities(conn: Connection, r_line: LineInChangeLog):
+def enrich_new_record_with_search_activities(conn: Connection, r_line: LineInChangeLog) -> None:
     """add the lists of current searches' activities to New Record"""
 
     try:
@@ -620,10 +607,8 @@ def enrich_new_record_with_search_activities(conn: Connection, r_line: LineInCha
         logging.error('Not able to enrich New Records with Search Activities: ' + str(e))
         logging.exception(e)
 
-    return r_line
 
-
-def enrich_new_record_with_managers(conn: Connection, r_line: LineInChangeLog):
+def enrich_new_record_with_managers(conn: Connection, r_line: LineInChangeLog) -> None:
     """add the lists of current searches' managers to the New Record"""
 
     try:
@@ -645,10 +630,8 @@ def enrich_new_record_with_managers(conn: Connection, r_line: LineInChangeLog):
         logging.error('Not able to enrich New Records with Managers: ' + str(e))
         logging.exception(e)
 
-    return r_line
 
-
-def enrich_new_record_with_comments(conn: Connection, type_of_comments, r_line: LineInChangeLog):
+def enrich_new_record_with_comments(conn: Connection, type_of_comments, r_line: LineInChangeLog) -> None:
     """add the lists of new comments + new inforg comments to the New Record"""
 
     try:
@@ -707,5 +690,3 @@ def enrich_new_record_with_comments(conn: Connection, type_of_comments, r_line: 
     except Exception as e:
         logging.error(f'Not able to enrich New Records with Comments for {type_of_comments}:')
         logging.exception(e)
-
-    return r_line
