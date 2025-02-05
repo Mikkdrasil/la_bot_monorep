@@ -535,9 +535,14 @@ class LogRecordExtractor:
         for comment in line.comments:
             if comment.text:
                 comment_text = f'{comment.text[:500]}...' if len(comment.text) > 500 else comment.text
+                comment_text = add_tel_link(comment_text)
+                code_pos = comment_text.find('<code>')
+                text_before_code_pos = comment_text[:code_pos]
+                text_from_code_pos = comment_text[code_pos:]
+
                 msg += (
                     f' &#8226; <a href="{url_prefix}{comment.author_link}">{comment.author_nickname}</a>: '
-                    f'<i>«<a href="{comment.url}">{comment_text}</a>»</i>\n'
+                    f'<i>«<a href="{comment.url}">{text_before_code_pos}</a>{text_from_code_pos}»</i>\n'
                 )
 
         msg = f'Новые комментарии по {activity} {line.clickable_name}:\n{msg}' if msg else ''
