@@ -8,7 +8,6 @@ import sqlalchemy.pool
 from sqlalchemy.engine.base import Connection
 
 from _dependencies.misc import age_writer, notify_admin
-from compose_notifications._utils.common_message_composer import CommonMessageComposer
 
 from .notif_common import (
     WINDOW_FOR_NOTIFICATIONS_DAYS,
@@ -29,7 +28,6 @@ class LogRecordExtractor:
             return None
 
         self.enrich_new_record(line)
-        CommonMessageComposer(line).compose()
         return line
 
     def select_first_record_from_change_log(self, record_id: int | None = None) -> LineInChangeLog | None:

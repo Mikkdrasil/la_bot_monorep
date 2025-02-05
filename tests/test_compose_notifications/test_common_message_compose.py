@@ -7,7 +7,7 @@ import pytest
 from faker import Faker
 from polyfactory.factories import DataclassFactory
 
-from compose_notifications._utils.common_message_composer import CommonMessageComposer
+from compose_notifications._utils.message_composers import CommonMessageComposer
 from compose_notifications._utils.notif_common import ChangeLogSavedValue, ChangeType, LineInChangeLog, TopicType
 
 faker = Faker('ru_RU')

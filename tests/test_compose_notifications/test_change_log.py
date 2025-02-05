@@ -145,5 +145,4 @@ class TestChangeLogExtractor:
         assert record.activities == [dict_activity_record.activity_name]
         assert len(record.comments) == 1
         assert record.comments[0].text == comment.comment_text
-        assert comment.comment_text in record.message[0]
         # TODO inforg comment
