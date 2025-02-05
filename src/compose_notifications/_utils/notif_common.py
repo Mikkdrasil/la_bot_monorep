@@ -31,7 +31,7 @@ class TopicType(Enum):
 SEARCH_TOPIC_TYPES = {0, 1, 2, 3, 4, 5}
 
 
-class NotifType(Enum):
+class ChangeType(Enum):
     """
     SQL table 'dict_notif_types'
     """
@@ -91,8 +91,8 @@ class LineInChangeLog:
     changed_field: Any
     new_value: Any
     change_log_id: int
-    change_type: int  # it is int from 0 to 99 which represents "change_type" column in change_log
-    topic_type_id: int = 0
+    change_type: int  # enum NotifType
+    topic_type_id: int = 0  # enum TopicType
     name: str = ''
     link: str = ''
     status: Any = None
@@ -142,25 +142,19 @@ class User:
     radius: int = 0
 
 
-def add_tel_link(incoming_text: str, modifier: str = 'all') -> str:
+def add_tel_link(incoming_text: str) -> str:
     """check is text contains phone number and replaces it with clickable version, also removes [tel] tags"""
 
-    outcome_text = None
-
     # Modifier for all users
-    if modifier == 'all':
-        outcome_text = incoming_text
-        nums = re.findall(r'(?:\+7|7|8)\s?[\s\-(]?\s?\d{3}[\s\-)]?\s?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', incoming_text)
-        for num in nums:
-            outcome_text = outcome_text.replace(num, '<code>' + str(num) + '</code>')
 
-        phpbb_tags_to_delete = {'[tel]', '[/tel]'}
-        for tag in phpbb_tags_to_delete:
-            outcome_text = outcome_text.replace(tag, '', 5)
+    outcome_text = incoming_text
+    nums = re.findall(r'(?:\+7|7|8)\s?[\s\-(]?\s?\d{3}[\s\-)]?\s?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', incoming_text)
+    for num in nums:
+        outcome_text = outcome_text.replace(num, '<code>' + str(num) + '</code>')
 
-    # Modifier for Admin
-    else:
-        pass
+    phpbb_tags_to_delete = {'[tel]', '[/tel]'}
+    for tag in phpbb_tags_to_delete:
+        outcome_text = outcome_text.replace(tag, '', 5)
 
     return outcome_text
 

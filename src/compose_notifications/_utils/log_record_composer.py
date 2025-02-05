@@ -16,11 +16,11 @@ from .notif_common import (
     COORD_PATTERN,
     SEARCH_TOPIC_TYPES,
     WINDOW_FOR_NOTIFICATIONS_DAYS,
+    ChangeType,
     Comment,
     CommentsType,
     LineInChangeLog,
     MessageNewTopic,
-    NotifType,
     add_tel_link,
     define_dist_and_dir_to_search,
     get_coords_from_list,
@@ -153,17 +153,17 @@ class LogRecordExtractor:
         try:
             last_line = line
 
-            if line.change_type == NotifType.topic_new:
+            if line.change_type == ChangeType.topic_new:
                 self.compose_com_msg_on_new_topic(line)
-            elif line.change_type == NotifType.topic_status_change and line.topic_type_id in SEARCH_TOPIC_TYPES:
+            elif line.change_type == ChangeType.topic_status_change and line.topic_type_id in SEARCH_TOPIC_TYPES:
                 self.compose_com_msg_on_status_change(line)
-            elif line.change_type == NotifType.topic_title_change:
+            elif line.change_type == ChangeType.topic_title_change:
                 self.compose_com_msg_on_title_change(line)
-            elif line.change_type == NotifType.topic_comment_new:
+            elif line.change_type == ChangeType.topic_comment_new:
                 self.compose_com_msg_on_new_comments(line)
-            elif line.change_type == NotifType.topic_inforg_comment_new:
+            elif line.change_type == ChangeType.topic_inforg_comment_new:
                 self.compose_com_msg_on_inforg_comments(line)
-            elif line.change_type == NotifType.topic_first_post_change:
+            elif line.change_type == ChangeType.topic_first_post_change:
                 self.compose_com_msg_on_first_post_change(line)
 
             logging.info('New Record enriched with common Message Text')
@@ -345,7 +345,7 @@ class LogRecordExtractor:
 
         try:
             # look for matching Forum Search Numbers in New Record List & Comments
-            if r_line.change_type not in {NotifType.topic_inforg_comment_new, NotifType.topic_comment_new}:
+            if r_line.change_type not in {ChangeType.topic_inforg_comment_new, ChangeType.topic_comment_new}:
                 return
 
             if type_of_comments == CommentsType.all:

@@ -8,7 +8,14 @@ from sqlalchemy.engine.base import Connection
 from _dependencies.commons import Topics, get_app_config, publish_to_pubsub
 from _dependencies.misc import notify_admin
 
-from .notif_common import COORD_FORMAT, SEARCH_TOPIC_TYPES, LineInChangeLog, User, define_dist_and_dir_to_search
+from .notif_common import (
+    COORD_FORMAT,
+    SEARCH_TOPIC_TYPES,
+    ChangeType,
+    LineInChangeLog,
+    User,
+    define_dist_and_dir_to_search,
+)
 
 CLEANER_RE = re.compile('<.*?>')
 
@@ -38,9 +45,10 @@ class NotificationComposer:
             change_type = new_record.change_type
             change_log_id = new_record.change_log_id
 
-            users_who_should_not_be_informed, this_record_was_processed_already, mailing_id = self.process_mailing_id(
-                change_log_id, topic_id, change_type
-            )
+            mailing_id = self.create_new_mailing_id(change_log_id, topic_id, change_type)
+
+            users_who_should_not_be_informed = self.get_from_sql_list_of_users_with_prepared_message(change_log_id)
+            # TODO move to Users composer
 
             list_of_users = self.crop_user_list(list_of_users, users_who_should_not_be_informed, new_record)
 
@@ -52,7 +60,6 @@ class NotificationComposer:
                 self.generate_notification_for_user(
                     new_record,
                     users_who_should_not_be_informed,
-                    this_record_was_processed_already,
                     mailing_id,
                     user,
                 )
@@ -65,18 +72,7 @@ class NotificationComposer:
             logging.info('Not able to Iterate over all Users and Updates: ')
             logging.exception(e1)
 
-    def process_mailing_id(self, change_log_id: int, topic_id: int, change_type):
-        """TODO"""
-
-        # check if this change_log record was somehow processed
-        sql_text = sqlalchemy.text("""SELECT EXISTS (SELECT * FROM notif_mailings WHERE change_log_id=:a);""")
-        record_was_processed_already = self.conn.execute(sql_text, a=change_log_id).fetchone()[0]
-
-        # TODO: DEBUG
-        if record_was_processed_already:
-            logging.info('[comp_notif]: 2 MAILINGS for 1 CHANGE LOG RECORD identified')
-        # TODO: DEBUG
-
+    def create_new_mailing_id(self, change_log_id: int, topic_id: int, change_type) -> int:
         # record into SQL table notif_mailings
         sql_text = sqlalchemy.text("""
                         INSERT INTO notif_mailings (topic_id, source_script, mailing_type, change_log_id)
@@ -90,11 +86,6 @@ class NotificationComposer:
         mail_id = raw_data[0]
         logging.info(f'mailing_id = {mail_id}')
 
-        users_should_not_be_informed = self.get_from_sql_list_of_users_with_prepared_message(change_log_id)
-        logging.info('users_who_should_not_be_informed:')
-        logging.info(users_should_not_be_informed)
-        logging.info('in total ' + str(len(users_should_not_be_informed)))
-
         # TODO: do we need this table at all?
         # record into SQL table notif_mailings_status
         sql_text = sqlalchemy.text("""
@@ -103,7 +94,18 @@ class NotificationComposer:
                                             """)
         self.conn.execute(sql_text, a=mail_id, b='created', c=datetime.datetime.now())
 
-        return users_should_not_be_informed, record_was_processed_already, mail_id
+        return mail_id
+
+    def check_if_record_was_already_processed(self, change_log_id: int) -> bool:
+        # check if this change_log record was somehow processed
+        sql_text = sqlalchemy.text("""SELECT EXISTS (SELECT * FROM notif_mailings WHERE change_log_id=:a);""")
+        record_was_processed_already = self.conn.execute(sql_text, a=change_log_id).fetchone()[0]
+
+        # TODO: DEBUG
+        if record_was_processed_already:
+            logging.info('[comp_notif]: 2 MAILINGS for 1 CHANGE LOG RECORD identified')
+        # TODO: DEBUG
+        return record_was_processed_already
 
     def get_from_sql_list_of_users_with_prepared_message(self, change_log_id: int) -> list[int]:
         """check what is the list of users for whom we already composed messages for the given change_log record"""
@@ -130,6 +132,9 @@ class NotificationComposer:
         for line in raw_data_:
             users_who_were_composed.append(line[0])
 
+        logging.info('users_who_should_not_be_informed:')
+        logging.info(users_who_were_composed)
+        logging.info('in total ' + str(len(users_who_were_composed)))
         return users_who_were_composed
 
     def crop_user_list(
@@ -307,7 +312,6 @@ class NotificationComposer:
         self,
         new_record: LineInChangeLog,
         users_who_should_not_be_informed,
-        this_record_was_processed_already,
         mailing_id,
         user: User,
     ):
@@ -319,6 +323,8 @@ class NotificationComposer:
         topic_type_id = new_record.topic_type_id
         region_to_show = new_record.region if user.user_in_multi_folders else None
         user_message = ''
+
+        this_record_was_processed_already = self.check_if_record_was_already_processed(change_log_id)
 
         # define if user received this message already
         if this_record_was_processed_already:
@@ -342,7 +348,11 @@ class NotificationComposer:
 
         # TODO: to delete msg_group at all ?
         # messages followed by coordinates (sendMessage + sendLocation) have same group
-        msg_group_id = self.get_the_new_group_id() if change_type in {0, 8} else None
+        msg_group_id = (
+            self.get_the_new_group_id()
+            if change_type in {ChangeType.topic_new, ChangeType.topic_first_post_change}
+            else None
+        )
         # not None for new_search, field_trips_new, field_trips_change,  coord_change
 
         # TODO: make text more compact within 50 symbols
@@ -351,7 +361,7 @@ class NotificationComposer:
         message_params = {'parse_mode': 'HTML', 'disable_web_page_preview': 'True'}
 
         # for the new searches we add a link to web_app map
-        if change_type == 0:
+        if change_type == ChangeType.topic_new:
             map_button = {'text': 'Смотреть на Карте Поисков', 'web_app': {'url': get_app_config().web_app_url}}
             message_params['reply_markup'] = {'inline_keyboard': [[map_button]]}
 
@@ -367,14 +377,12 @@ class NotificationComposer:
             change_log_id,
         )
 
-        # for user tips in "new search" notifs – to increase sent messages counter
-        if change_type == 0 and topic_type_id in SEARCH_TOPIC_TYPES:  # 'new_search':
+        # save to SQL the sendLocation notification for "new search"
+        if change_type == ChangeType.topic_new and topic_type_id in SEARCH_TOPIC_TYPES:
+            # for user tips in "new search" notifs – to increase sent messages counter
             self.stat_list_of_recipients.append(user.user_id)
-
-            # save to SQL the sendLocation notification for "new search"
-        if change_type in {0} and topic_type_id in SEARCH_TOPIC_TYPES and s_lat and s_lon:
-            # 'new_search',
-            message_params = {'latitude': s_lat, 'longitude': s_lon}
+            if s_lat and s_lon:
+                message_params = {'latitude': s_lat, 'longitude': s_lon}
 
             # record into SQL table notif_by_user (not text, but coords only)
             self.save_to_sql_notif_by_user(
@@ -387,7 +395,7 @@ class NotificationComposer:
                 msg_group_id,
                 change_log_id,
             )
-        elif change_type == 8:
+        elif change_type == ChangeType.topic_first_post_change:
             try:
                 list_of_coords = re.findall(r'<code>', user_message)
                 if list_of_coords and len(list_of_coords) == 1:
@@ -596,33 +604,37 @@ class MessageComposer:
     def compose_message_for_user(self) -> str:
         change_type = self.new_record.change_type
         topic_type_id = self.new_record.topic_type_id
-        if change_type == 0:  # new topic: new search, new event
-            if topic_type_id in SEARCH_TOPIC_TYPES:  # if it's a new search
-                message = self._compose_individual_message_on_new_search()
-            else:  # new event
-                message = self.new_record.message[0]
+        if change_type == ChangeType.topic_new:
+            return (
+                self._compose_individual_message_on_new_search()
+                if topic_type_id in SEARCH_TOPIC_TYPES
+                else self.new_record.message[0]
+            )
 
-        elif change_type == 1 and topic_type_id in SEARCH_TOPIC_TYPES:  # search status change
+        elif change_type == ChangeType.topic_status_change and topic_type_id in SEARCH_TOPIC_TYPES:
             message = self.new_record.message[0]
             if self.user.user_in_multi_folders and self.new_record.message[1]:
                 message += self.new_record.message[1]
+            return message
 
-        elif change_type == 2:  # 'title_change':
-            message = self.new_record.message
+        elif change_type == ChangeType.topic_title_change:
+            return self.new_record.message  # TODO ???
 
-        elif change_type == 3:  # 'replies_num_change':
-            message = self.new_record.message[0]
+        elif change_type == ChangeType.topic_comment_new:
+            return self.new_record.message[0]  # TODO ???
 
-        elif change_type == 4:  # 'inforg_replies':
+        elif change_type == ChangeType.topic_inforg_comment_new:
             message = self.new_record.message[0]
             if self.user.user_in_multi_folders and self.new_record.message[1]:
                 message += self.new_record.message[1]
             if self.new_record.message[2]:
                 message += self.new_record.message[2]
+            return message
 
-        elif change_type == 8:  # first_post_change
-            message = self._compose_individual_message_on_first_post_change()
-        return message
+        elif change_type == ChangeType.topic_first_post_change:
+            return self._compose_individual_message_on_first_post_change()
+
+        return ''
 
     def _compose_individual_message_on_first_post_change(self) -> str:
         """compose individual message for notification of every user on change of first post"""

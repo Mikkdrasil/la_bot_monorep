@@ -15,13 +15,14 @@ class UsersListComposer:
         list_of_users = self.compose_users_list_from_users(new_record)
         self.enrich_users_list_with_age_periods(list_of_users)
         self.enrich_users_list_with_radius(list_of_users)
+
         return list_of_users
 
-    def enrich_users_list_with_age_periods(conn: Connection, list_of_users: list[User]) -> None:
+    def enrich_users_list_with_age_periods(self, list_of_users: list[User]) -> None:
         """add the data on Lost people age notification preferences from user_pref_age into users List"""
 
         try:
-            notif_prefs = conn.execute("""SELECT user_id, period_min, period_max FROM user_pref_age;""").fetchall()
+            notif_prefs = self.conn.execute("""SELECT user_id, period_min, period_max FROM user_pref_age;""").fetchall()
 
             if not notif_prefs:
                 return

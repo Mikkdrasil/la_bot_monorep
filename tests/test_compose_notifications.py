@@ -13,7 +13,7 @@ import compose_notifications._utils.notif_common
 import compose_notifications._utils.users_list_composer
 from _dependencies.commons import sqlalchemy_get_pool
 from compose_notifications import main
-from compose_notifications._utils.notif_common import NotifType, TopicType, get_coords_from_list
+from compose_notifications._utils.notif_common import ChangeType, TopicType, get_coords_from_list
 from compose_notifications.main import LineInChangeLog
 from tests.common import get_event_with_data
 from tests.factories import db_models
