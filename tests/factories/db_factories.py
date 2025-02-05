@@ -42,6 +42,10 @@ class ChangeLogFactory(BaseFactory[db_models.ChangeLog]):
     pass
 
 
+class NotifMailingFactory(BaseFactory[db_models.NotifMailing]):
+    pass
+
+
 class SearchFactory(BaseFactory[db_models.Search]):
     pass
 
