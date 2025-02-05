@@ -94,8 +94,8 @@ def create_user_notifications_from_change_log_record(
 
     # check the matrix: new update - user and initiate sending notifications
 
-    composer = NotificationMaker(conn)
-    composer.generate_notifications_for_users(new_record, list_of_users, function_id)
+    composer = NotificationMaker(conn, new_record)
+    composer.generate_notifications_for_users(list_of_users, function_id)
 
     analytics_iterations_finish = datetime.datetime.now()
     duration_iterations = round((analytics_iterations_finish - analytics_match_finish).total_seconds(), 2)

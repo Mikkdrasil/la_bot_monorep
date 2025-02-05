@@ -16,10 +16,10 @@ class TestNotificationMaker:
     def test_generate_notifications_for_users(self, connection: Connection, dict_notif_type_status_change):
         record = LineInChangeLogFactory.build(ignore=False, change_type=ChangeType.topic_status_change, processed=False)
         user = UserFactory.build()
-        composer = NotificationMaker(connection)
+        composer = NotificationMaker(connection, record)
 
         assert not record.processed
-        composer.generate_notifications_for_users(record, [user], 1)
+        composer.generate_notifications_for_users([user], 1)
         assert record.processed
 
     def test_generate_notifications_for_user_text(
@@ -27,10 +27,10 @@ class TestNotificationMaker:
     ):
         record = LineInChangeLogFactory.build(ignore=False, change_type=ChangeType.topic_status_change, processed=False)
         user = UserFactory.build()
-        composer = NotificationMaker(connection)
-        mailing_id = composer.create_new_mailing_id(record)
+        composer = NotificationMaker(connection, record)
+        mailing_id = composer.create_new_mailing_id()
 
-        composer.generate_notification_for_user(record, mailing_id, user)
+        composer.generate_notification_for_user(mailing_id, user)
 
         query = session.query(db_models.NotifByUser).filter(
             db_models.NotifByUser.change_log_id == record.change_log_id,
@@ -52,15 +52,16 @@ class TestNotificationMaker:
             processed=False,
             search_latitude='60.0000',
             search_longitude='60.0000',
+            message=['a', 'b', 'c'],
         )
         user = UserFactory.build(
             user_latitude='55.0000',
             user_longitude='55.0000',
         )
-        composer = NotificationMaker(connection)
-        mailing_id = composer.create_new_mailing_id(record)
+        composer = NotificationMaker(connection, record)
+        mailing_id = composer.create_new_mailing_id()
 
-        composer.generate_notification_for_user(record, mailing_id, user)
+        composer.generate_notification_for_user(mailing_id, user)
 
         query = session.query(db_models.NotifByUser).filter(
             db_models.NotifByUser.change_log_id == record.change_log_id,
@@ -87,10 +88,10 @@ class TestNotificationMaker:
             user_latitude='55.0000',
             user_longitude='55.0000',
         )
-        composer = NotificationMaker(connection)
-        mailing_id = composer.create_new_mailing_id(record)
+        composer = NotificationMaker(connection, record)
+        mailing_id = composer.create_new_mailing_id()
 
-        composer.generate_notification_for_user(record, mailing_id, user)
+        composer.generate_notification_for_user(mailing_id, user)
 
         query = session.query(db_models.NotifByUser).filter(
             db_models.NotifByUser.change_log_id == record.change_log_id,

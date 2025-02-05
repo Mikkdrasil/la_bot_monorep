@@ -24,15 +24,15 @@ FIB_LIST = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987]
 
 
 class NotificationMaker:
-    def __init__(self, conn: Connection) -> None:
+    def __init__(self, conn: Connection, new_record: LineInChangeLog) -> None:
         self.conn = conn
         self.stat_list_of_recipients: list[int] = []  # list of users who received notification on new search
+        self.new_record = new_record
 
-    def generate_notifications_for_users(
-        self, new_record: LineInChangeLog, list_of_users: list[User], function_id: int
-    ):
+    def generate_notifications_for_users(self, list_of_users: list[User], function_id: int):
         """initiates a full cycle for all messages composition for all the users"""
 
+        new_record = self.new_record
         number_of_situations_checked = 0
 
         try:
@@ -42,18 +42,14 @@ class NotificationMaker:
                 logging.info('Iterations over all Users and Updates are done (record Ignored)')
                 return
 
-            mailing_id = self.create_new_mailing_id(new_record)
+            mailing_id = self.create_new_mailing_id()
 
             message_for_pubsub = {'triggered_by_func_id': function_id, 'text': 'initiate notifs send out'}
             publish_to_pubsub(Topics.topic_to_send_notifications, message_for_pubsub)
 
             for user in list_of_users:
                 number_of_situations_checked += 1
-                self.generate_notification_for_user(
-                    new_record,
-                    mailing_id,
-                    user,
-                )
+                self.generate_notification_for_user(mailing_id, user)
 
             # mark this line as all-processed
             new_record.processed = True
@@ -63,7 +59,7 @@ class NotificationMaker:
             logging.info('Not able to Iterate over all Users and Updates: ')
             logging.exception(e1)
 
-    def create_new_mailing_id(self, new_record: LineInChangeLog) -> int:
+    def create_new_mailing_id(self) -> int:
         # record into SQL table notif_mailings
 
         sql_text = sqlalchemy.text("""
@@ -73,10 +69,10 @@ class NotificationMaker:
                         """)
         raw_data = self.conn.execute(
             sql_text,
-            a=new_record.forum_search_num,
+            a=self.new_record.forum_search_num,
             b='notifications_script',
-            c=new_record.change_type,
-            d=new_record.change_log_id,
+            c=self.new_record.change_type,
+            d=self.new_record.change_log_id,
         ).fetchone()
 
         mail_id = raw_data[0]
@@ -84,45 +80,44 @@ class NotificationMaker:
 
         return mail_id
 
-    def check_if_record_was_already_processed(self, change_log_id: int) -> bool:
+    def check_if_record_was_already_processed(self) -> bool:
         # check if this change_log record was somehow processed
+
         sql_text = sqlalchemy.text("""
             SELECT EXISTS (SELECT * FROM notif_mailings WHERE change_log_id=:a);
                                    """)
-        record_was_processed_already = self.conn.execute(sql_text, a=change_log_id).fetchone()[0]
+        record_was_processed_already = self.conn.execute(
+            sql_text,
+            a=self.new_record.change_log_id,
+        ).fetchone()[0]
 
-        # TODO: DEBUG
         if record_was_processed_already:
             logging.info('[comp_notif]: 2 MAILINGS for 1 CHANGE LOG RECORD identified')
-        # TODO: DEBUG
         return record_was_processed_already
 
     def generate_notification_for_user(
         self,
-        new_record: LineInChangeLog,
         mailing_id: int,
         user: User,
     ) -> None:
-        change_type = new_record.change_type
-        change_log_id = new_record.change_log_id
+        change_type = self.new_record.change_type
+        topic_type_id = self.new_record.topic_type_id
+        region_to_show = self.new_record.region if user.user_in_multi_folders else None
 
-        topic_type_id = new_record.topic_type_id
-        region_to_show = new_record.region if user.user_in_multi_folders else None
-
-        this_record_was_processed_already = self.check_if_record_was_already_processed(change_log_id)
+        # TODO move one level upper
+        # and think: we really need it?
+        this_record_was_processed_already = self.check_if_record_was_already_processed()
 
         # define if user received this message already
         if this_record_was_processed_already:
-            this_user_was_notified = self.get_from_sql_if_was_notified_already(
-                user.user_id, 'text', new_record.change_log_id
-            )
+            this_user_was_notified = self.get_from_sql_if_was_notified_already(user.user_id, 'text')
 
             logging.info(f'this user was notified already {user.user_id}, {this_user_was_notified}')
             if this_user_was_notified:
                 return
 
         # start composing individual messages (specific user on specific situation)
-        user_message = MessageComposer(new_record, user, region_to_show).compose_message_for_user()
+        user_message = MessageComposer(self.new_record, user, region_to_show).compose_message_for_user()
         if not user_message:
             return
 
@@ -135,22 +130,20 @@ class NotificationMaker:
         )
         # not None for new_search, field_trips_new, field_trips_change,  coord_change
 
-        self._send_main_text_message(mailing_id, user, change_type, change_log_id, user_message, msg_group_id)
+        self._send_main_text_message(mailing_id, user, user_message, msg_group_id)
 
         # save to SQL the sendLocation notification for "new search"
         if change_type == ChangeType.topic_new and topic_type_id in SEARCH_TOPIC_TYPES:
             # for user tips in "new search" notifs – to increase sent messages counter
             self.stat_list_of_recipients.append(user.user_id)
-            self._send_coordinates_for_new_search(new_record, mailing_id, user, change_log_id, msg_group_id)
+            self._send_coordinates_for_new_search(mailing_id, user, msg_group_id)
         elif change_type == ChangeType.topic_first_post_change:
-            self._send_coordinates_for_first_post_change(mailing_id, user, change_log_id, user_message, msg_group_id)
+            self._send_coordinates_for_first_post_change(mailing_id, user, user_message, msg_group_id)
 
     def _send_main_text_message(
         self,
         mailing_id: int,
         user: User,
-        change_type: ChangeType,
-        change_log_id: int,
         user_message: str,
         msg_group_id: int | None,
     ) -> None:
@@ -159,7 +152,7 @@ class NotificationMaker:
         message_params = {'parse_mode': 'HTML', 'disable_web_page_preview': 'True'}
 
         # for the new searches we add a link to web_app map
-        if change_type == ChangeType.topic_new:
+        if self.new_record.change_type == ChangeType.topic_new:
             map_button = {'text': 'Смотреть на Карте Поисков', 'web_app': {'url': get_app_config().web_app_url}}
             message_params['reply_markup'] = {'inline_keyboard': [[map_button]]}
 
@@ -172,17 +165,15 @@ class NotificationMaker:
             'text',
             message_params,
             msg_group_id,
-            change_log_id,
         )
 
     def _send_coordinates_for_new_search(
         self,
-        new_record: LineInChangeLog,
         mailing_id: int,
         user: User,
-        change_log_id: int,
         msg_group_id: int | None,
     ) -> None:
+        new_record = self.new_record
         if not (new_record.search_latitude or new_record.search_longitude):
             return
         message_params = {'latitude': new_record.search_latitude, 'longitude': new_record.search_longitude}
@@ -195,41 +186,43 @@ class NotificationMaker:
             'coords',
             message_params,
             msg_group_id,
-            change_log_id,
         )
 
     def _send_coordinates_for_first_post_change(
         self,
         mailing_id: int,
         user: User,
-        change_log_id: int,
         user_message: str,
         msg_group_id: int | None,
     ) -> None:
-        try:
-            list_of_coords = re.findall(r'<code>', user_message)
-            if not list_of_coords or len(list_of_coords) != 1:
-                return
-                # that would mean that there's only 1 set of new coordinates and hence we can
-                # send the dedicated sendLocation message
-            both_coordinates = re.search(r'(?<=<code>).{5,100}(?=</code>)', user_message).group()
-            if not both_coordinates:
-                return
-            new_lat = re.search(r'^[\d.]{2,12}(?=\D)', both_coordinates).group()
-            new_lon = re.search(r'(?<=\D)[\d.]{2,12}$', both_coordinates).group()
-            message_params = {'latitude': new_lat, 'longitude': new_lon}
-            self.save_to_sql_notif_by_user(
-                mailing_id,
-                user.user_id,
-                None,
-                None,
-                'coords',
-                message_params,
-                msg_group_id,
-                change_log_id,
-            )
-        except Exception as ee:
-            logging.exception("Can't calculate/send coordinates")
+        coords = self._extract_coordinates_from_message(user_message)
+        if not coords:
+            return
+        new_lat, new_lon = coords
+        message_params = {'latitude': new_lat, 'longitude': new_lon}
+        self.save_to_sql_notif_by_user(
+            mailing_id,
+            user.user_id,
+            None,
+            None,
+            'coords',
+            message_params,
+            msg_group_id,
+        )
+
+    def _extract_coordinates_from_message(self, user_message: str) -> None | tuple[str, str]:
+        list_of_coords = re.findall(r'<code>', user_message)
+        if not list_of_coords or len(list_of_coords) != 1:
+            return None
+            # that would mean that there's only 1 set of new coordinates and hence we can
+            # send the dedicated sendLocation message
+        both_coordinates = re.search(r'(?<=<code>).{5,100}(?=</code>)', user_message).group()
+        if not both_coordinates:
+            return None
+        new_lat = re.search(r'^[\d.]{2,12}(?=\D)', both_coordinates).group()
+        new_lon = re.search(r'(?<=\D)[\d.]{2,12}$', both_coordinates).group()
+
+        return new_lat, new_lon
 
     def get_the_new_group_id(self) -> int:
         """define the max message_group_id in notif_by_user and add +1"""
@@ -247,7 +240,7 @@ class NotificationMaker:
 
         return next_id
 
-    def get_from_sql_if_was_notified_already(self, user_id_, message_type_, change_log_id_):
+    def get_from_sql_if_was_notified_already(self, user_id: int, message_type: str):
         """check in sql if this user was already notified re this change_log record
         works for every user during iterations over users"""
 
@@ -268,7 +261,10 @@ class NotificationMaker:
         """)
 
         user_was_already_notified = self.conn.execute(
-            sql_text_, a=change_log_id_, b=user_id_, c=message_type_
+            sql_text_,
+            a=self.new_record.change_log_id,
+            b=user_id,
+            c=message_type,
         ).fetchone()[0]
 
         return user_was_already_notified
@@ -282,7 +278,6 @@ class NotificationMaker:
         message_type_,
         message_params_,
         message_group_id_,
-        change_log_id_,
     ):
         """save to sql table notif_by_user the new message"""
 
@@ -310,7 +305,7 @@ class NotificationMaker:
             e=message_type_,
             f=message_params_,
             g=message_group_id_,
-            h=change_log_id_,
+            h=self.new_record.change_log_id,
             i=datetime.datetime.now(),
         )
 
