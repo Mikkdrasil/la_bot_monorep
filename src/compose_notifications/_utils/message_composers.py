@@ -28,7 +28,6 @@ class CommonMessageComposer:
         line.message
         line.clickable_name
         line.topic_emoji
-        line.ignore (!!! _compose_com_msg_on_new_topic)
     """
 
     def __init__(self, line: LineInChangeLog):
@@ -322,16 +321,15 @@ class PersonalMessageComposer:
         self.new_record = new_record
 
     def compose_message_for_user(self, user: User) -> str:
+        # TODO move somewhere?
+        common_mesage_composer = CommonMessageComposer(self.new_record)
+        common_mesage_composer._make_clickable_name()
+        common_mesage_composer._make_emoji()
+
         change_type = self.new_record.change_type
         topic_type_id = self.new_record.topic_type_id
         if change_type == ChangeType.topic_new:
-            """
-            Надо затащить сюда логику из CommonMessageComposer
-            Ветки условий те же самые
-            Проблема - быстродействие. Надо сделать, чтоб работало быстро.
-            Можно попробовать lru_cache
-            """
-
+            common_mesage_composer._compose_com_msg_on_new_topic()
             return (
                 self._compose_individual_message_on_new_search(user)
                 if topic_type_id in SEARCH_TOPIC_TYPES
@@ -339,18 +337,22 @@ class PersonalMessageComposer:
             )
 
         elif change_type == ChangeType.topic_status_change and topic_type_id in SEARCH_TOPIC_TYPES:
+            common_mesage_composer._compose_com_msg_on_status_change()
             message = self.new_record.message_common_part[0]
             if user.user_in_multi_folders and self.new_record.message_common_part[1]:
                 message += self.new_record.message_common_part[1]
             return message
 
         elif change_type == ChangeType.topic_title_change:
+            common_mesage_composer._compose_com_msg_on_title_change()
             return self.new_record.message_common_part  # TODO ???
 
         elif change_type == ChangeType.topic_comment_new:
+            common_mesage_composer._compose_com_msg_on_new_comments()
             return self.new_record.message_common_part[0]  # TODO ???
 
         elif change_type == ChangeType.topic_inforg_comment_new:
+            common_mesage_composer._compose_com_msg_on_inforg_comments()
             message = self.new_record.message_common_part[0]
             if user.user_in_multi_folders and self.new_record.message_common_part[1]:
                 message += self.new_record.message_common_part[1]
@@ -359,6 +361,7 @@ class PersonalMessageComposer:
             return message
 
         elif change_type == ChangeType.topic_first_post_change:
+            common_mesage_composer._compose_com_msg_on_first_post_change()
             return self._compose_individual_message_on_first_post_change(user)
 
         return ''
