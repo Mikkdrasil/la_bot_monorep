@@ -1,6 +1,7 @@
 import datetime
 import logging
 import re
+from typing import Any
 
 import sqlalchemy
 from sqlalchemy.engine.base import Connection
@@ -16,9 +17,13 @@ from .notif_common import (
     User,
     define_dist_and_dir_to_search,
 )
-from .users_list_composer import UserListFilter
 
 CLEANER_RE = re.compile('<.*?>')
+
+RE_LIST_COORDS = re.compile(r'<code>')
+RE_BOTH_COORDINATES = re.compile(r'(?<=<code>).{5,100}(?=</code>)')
+RE_LATITUDE = re.compile(r'^[\d.]{2,12}(?=\D)')
+RE_LONGITUDE = re.compile(r'(?<=\D)[\d.]{2,12}$')
 
 FIB_LIST = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987]
 
@@ -149,7 +154,7 @@ class NotificationMaker:
     ) -> None:
         # TODO: make text more compact within 50 symbols
         message_without_html = re.sub(CLEANER_RE, '', user_message)
-        message_params = {'parse_mode': 'HTML', 'disable_web_page_preview': 'True'}
+        message_params: dict[str, Any] = {'parse_mode': 'HTML', 'disable_web_page_preview': 'True'}
 
         # for the new searches we add a link to web_app map
         if self.new_record.change_type == ChangeType.topic_new:
@@ -211,16 +216,17 @@ class NotificationMaker:
         )
 
     def _extract_coordinates_from_message(self, user_message: str) -> None | tuple[str, str]:
-        list_of_coords = re.findall(r'<code>', user_message)
+        list_of_coords = re.findall(RE_LIST_COORDS, user_message)
         if not list_of_coords or len(list_of_coords) != 1:
             return None
             # that would mean that there's only 1 set of new coordinates and hence we can
             # send the dedicated sendLocation message
-        both_coordinates = re.search(r'(?<=<code>).{5,100}(?=</code>)', user_message).group()
-        if not both_coordinates:
-            return None
-        new_lat = re.search(r'^[\d.]{2,12}(?=\D)', both_coordinates).group()
-        new_lon = re.search(r'(?<=\D)[\d.]{2,12}$', both_coordinates).group()
+        try:
+            both_coordinates = re.search(RE_BOTH_COORDINATES, user_message).group()  # type:ignore[union-attr]
+            new_lat = re.search(RE_LATITUDE, both_coordinates).group()  # type:ignore[union-attr]
+            new_lon = re.search(RE_LONGITUDE, both_coordinates).group()  # type:ignore[union-attr]
+        except AttributeError:
+            return None  # not found coordinates in the message, we should not send any message
 
         return new_lat, new_lon
 
