@@ -8,7 +8,7 @@ from faker import Faker
 from polyfactory.factories import DataclassFactory
 
 from compose_notifications._utils.common_message_composer import CommonMessageComposer
-from compose_notifications._utils.notif_common import ChangeType, LineInChangeLog, TopicType
+from compose_notifications._utils.notif_common import ChangeLogSavedValue, ChangeType, LineInChangeLog, TopicType
 
 faker = Faker('ru_RU')
 
@@ -202,3 +202,21 @@ class TestCommonMessageComposer:
             record.message
             == '🔀Изменения в первом посте по {region}:\n\n➕Добавлено:\nНовые координаты <code>57.1234 61.12345</code>\n\n\nКоординаты сместились на ~126 км &#8601;&#xFE0E;'
         )
+
+
+def test_parse_change_log_saved_value_dict():
+    saved_value = r"{'del': [], 'add': ['Новые координаты 57.1234 61.12345']}"
+
+    res = ChangeLogSavedValue.from_db_saved_value(saved_value)
+    assert res.additions
+    assert not res.deletions
+    assert res.message == ''
+
+
+def test_parse_change_log_saved_value_str():
+    saved_value = r'Внимание! Изменения.'
+
+    res = ChangeLogSavedValue.from_db_saved_value(saved_value)
+    assert not res.additions
+    assert not res.deletions
+    assert res.message == 'Внимание! Изменения.'

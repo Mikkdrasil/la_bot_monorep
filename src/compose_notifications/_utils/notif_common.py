@@ -1,3 +1,4 @@
+import ast
 import datetime
 import logging
 import math
@@ -5,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 WINDOW_FOR_NOTIFICATIONS_DAYS = 60
 COORD_FORMAT = '{0:.5f}'
@@ -91,7 +94,7 @@ class Comment:
 class LineInChangeLog:
     forum_search_num: int
     changed_field: Any
-    new_value: Any
+    new_value: str
     change_log_id: int
     change_type: ChangeType
     topic_type_id: TopicType = TopicType.search_regular
@@ -251,3 +254,20 @@ def get_coords_from_list(input_list: list[str]) -> tuple[str | None, str | None]
     except Exception as e:  # noqa
         logging.exception(e)
         return None, None
+
+
+class ChangeLogSavedValue(BaseModel):
+    """value that stored in database `change_log.new_value`"""
+    model_config = ConfigDict(extra='ignore')
+
+    deletions: list[str] = Field(default_factory=list, alias='del')
+    additions: list[str] = Field(default_factory=list, alias='add')
+    message: str = Field(default='')
+
+    @classmethod
+    def from_db_saved_value(cls, saved_value: str) -> 'ChangeLogSavedValue':
+        if not saved_value or not saved_value.startswith('{'):
+            return cls(message=saved_value)
+
+        data = ast.literal_eval(saved_value)
+        return cls.model_validate(data)

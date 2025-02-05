@@ -228,6 +228,8 @@ class NotificationComposer:
 
                     for city_coords in list_of_city_coords:
                         search_lat, search_lon = city_coords
+                        if not search_lat or not search_lon:
+                            continue
                         actual_distance, direction = define_dist_and_dir_to_search(
                             search_lat, search_lon, user_lat, user_lon
                         )

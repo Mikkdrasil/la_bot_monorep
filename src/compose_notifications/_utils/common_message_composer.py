@@ -7,6 +7,7 @@ from compose_notifications._utils.notif_common import (
     COORD_FORMAT,
     COORD_PATTERN,
     SEARCH_TOPIC_TYPES,
+    ChangeLogSavedValue,
     ChangeType,
     LineInChangeLog,
     MessageNewTopic,
@@ -95,52 +96,46 @@ class CommonMessageComposer:
         """compose the common, user-independent message on search first post change"""
         line = self.line
 
-        message = line.new_value
-        clickable_name = line.clickable_name
-        old_lat = line.search_latitude
-        old_lon = line.search_longitude
-        type_id = line.topic_type_id
-
         region = '{region}'  # to be filled in on a stage of Individual Message preparation
-        list_of_additions = None
-        list_of_deletions = None
 
-        if message and message[0] == '{':
-            message_dict = ast.literal_eval(message) if message else {}
+        saved_message = ChangeLogSavedValue.from_db_saved_value(line.new_value)
 
-            if 'del' in message_dict.keys() and 'add' in message_dict.keys():
-                message = ''
-                list_of_deletions = message_dict['del']
-                if list_of_deletions:
-                    message += '➖Удалено:\n<s>'
-                    for deletion_line in list_of_deletions:
-                        message += f'{deletion_line}\n'
-                    message += '</s>'
+        if saved_message.deletions or saved_message.additions:
+            message = ''
+            if saved_message.deletions:
+                message += '➖Удалено:\n<s>'
+                for deletion_line in saved_message.deletions:
+                    message += f'{deletion_line}\n'
+                message += '</s>'
 
-                list_of_additions = message_dict['add']
-                if list_of_additions:
-                    if message:
-                        message += '\n'
-                    message += '➕Добавлено:\n'
-                    for addition_line in list_of_additions:
-                        # majority of coords in RU: lat in [30-80], long in [20-180]
-                        updated_line = re.sub(COORD_PATTERN, '<code>\g<0></code>', addition_line)
-                        message += f'{updated_line}\n'
-            else:
-                message = message_dict['message']
+            if saved_message.additions:
+                if message:
+                    message += '\n'
+                message += '➕Добавлено:\n'
+                for addition_line in saved_message.additions:
+                    # majority of coords in RU: lat in [30-80], long in [20-180]
+                    updated_line = re.sub(COORD_PATTERN, '<code>\g<0></code>', addition_line)
+                    message += f'{updated_line}\n'
+        else:
+            message = saved_message.message
 
         if not message:
             line.message = ''
             return
 
-        coord_change_phrase = self._get_coord_change_phrase(old_lat, old_lon, list_of_additions, list_of_deletions)
-
-        if type_id in SEARCH_TOPIC_TYPES:
+        clickable_name = line.clickable_name
+        if line.topic_type_id in SEARCH_TOPIC_TYPES:
+            coord_change_phrase = self._get_coord_change_phrase(
+                line.search_latitude,
+                line.search_longitude,
+                saved_message.additions,
+                saved_message.deletions,
+            )
             resulting_message = (
                 f'{line.topic_emoji}🔀Изменения в первом посте по {clickable_name}{region}:\n\n{message}'
                 f'{coord_change_phrase}'
             )
-        elif type_id == TopicType.event:
+        elif line.topic_type_id == TopicType.event:
             resulting_message = (
                 f'{line.topic_emoji}Изменения в описании мероприятия {clickable_name}{region}:\n\n{message}'
             )
@@ -151,8 +146,8 @@ class CommonMessageComposer:
 
     def _get_coord_change_phrase(
         self,
-        old_lat: float | None,
-        old_lon: float | None,
+        old_lat: str | None,
+        old_lon: str | None,
         list_of_additions: list[str],
         list_of_deletions: list[str],
     ) -> str:
