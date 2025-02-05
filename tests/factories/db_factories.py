@@ -33,16 +33,26 @@ class BaseFactory(SQLAlchemyFactory[T]):
     __set_primary_key__ = False  # primary keys generated automatically by postgres
 
 
-class NotifByUserFactory(BaseFactory[db_models.NotifByUser]):
-    message_params = '{"foo":1}'
-    message_type = 'text'
-
-
-class ChangeLogFactory(BaseFactory[db_models.ChangeLog]):
+class DictSearchActivityFactory(BaseFactory[db_models.DictSearchActivity]):
     pass
 
 
+class DictNotifTypeFactory(BaseFactory[db_models.DictNotifType]):
+    __set_primary_key__ = True  # primary keys generated automatically by postgres
+    # type_id = Use(BaseFactory.__random__.choice, [1, 2, 3, 4])
+
+
 class NotifMailingFactory(BaseFactory[db_models.NotifMailing]):
+    dict_notif_type = Use(DictNotifTypeFactory.create_sync)
+
+
+class NotifByUserFactory(BaseFactory[db_models.NotifByUser]):
+    message_params = '{"foo":1}'
+    message_type = 'text'
+    mailing = Use(NotifMailingFactory.create_sync)
+
+
+class ChangeLogFactory(BaseFactory[db_models.ChangeLog]):
     pass
 
 
@@ -89,10 +99,6 @@ class SearchAttributeFactory(BaseFactory[db_models.SearchAttribute]):
 
 class SearchActivityFactory(BaseFactory[db_models.SearchActivity]):
     activity_status = 'ongoing'
-
-
-class DictSearchActivityFactory(BaseFactory[db_models.DictSearchActivity]):
-    pass
 
 
 class CommentFactory(BaseFactory[db_models.Comment]):
