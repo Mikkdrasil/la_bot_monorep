@@ -148,6 +148,27 @@ class NotificationComposer:
 
         users_list_outcome = users_list_incoming
 
+        users_list_outcome = self._filter_inforg_double_notification_for_users(record, users_list_outcome)
+
+        # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
+        if not (record.age_min or record.age_max):
+            logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
+            # TODO ???
+            return users_list_outcome
+
+        users_list_outcome = self._filter_users_by_age_settings(record, users_list_outcome)
+
+        users_list_outcome = self._filter_users_by_search_radius(record, users_list_outcome)
+
+        users_list_outcome = self._filter_users_should_not_be_informed(users_should_not_be_informed, users_list_outcome)
+
+        users_list_outcome = self._filter_users_not_following_this_search(record, users_list_outcome)
+
+        return users_list_outcome
+
+    def _filter_inforg_double_notification_for_users(
+        self, record: LineInChangeLog, users_list_outcome: list[User]
+    ) -> list[User]:
         # 1. INFORG 2X notifications. crop the list of users, excluding Users who receives all types of notifications
         # (otherwise it will be doubling for them)
         temp_user_list = []
@@ -170,14 +191,10 @@ class NotificationComposer:
                         f'record {record.forum_search_num}'
                     )
             logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(temp_user_list)}')
-            users_list_outcome = temp_user_list
+        return temp_user_list
 
-        # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
+    def _filter_users_by_age_settings(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
         temp_user_list: list[User] = []
-        if not (record.age_min or record.age_max):
-            logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
-            return users_list_outcome
-
         search_age_range = [record.age_min, record.age_max]
 
         for user_line in users_list_outcome:
@@ -196,9 +213,11 @@ class NotificationComposer:
                 )
 
         logging.info(f'User List crop due to ages: {len(users_list_outcome)} --> {len(temp_user_list)}')
-        users_list_outcome = temp_user_list
+        return temp_user_list
 
+    def _filter_users_by_search_radius(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
         # 3. RADIUS. crop the list of users, excluding Users who does want to receive notifications within the radius
+        temp_user_list = []
         try:
             search_lat = record.search_latitude
             search_lon = record.search_longitude
@@ -206,8 +225,6 @@ class NotificationComposer:
             if record.city_locations and record.city_locations != 'None':
                 non_geolocated = [x for x in eval(record.city_locations) if isinstance(x, str)]
                 list_of_city_coords = eval(record.city_locations) if not non_geolocated else None
-
-            temp_user_list = []
 
             # CASE 3.1. When exact coordinates of Search Headquarters are indicated
             if search_lat and search_lon:
@@ -248,24 +265,31 @@ class NotificationComposer:
                 temp_user_list = users_list_outcome
 
             logging.info(f'User List crop due to radius: {len(users_list_outcome)} --> {len(temp_user_list)}')
-            users_list_outcome = temp_user_list
 
         except Exception as e:
             logging.info(f'TEMP - exception radius: {repr(e)}')
             logging.exception(e)
+        return temp_user_list
 
+    def _filter_users_should_not_be_informed(
+        self, users_should_not_be_informed, users_list_outcome: list[User]
+    ) -> list[User]:
         # 4. DOUBLING. crop the list of users, excluding Users who were already notified on this change_log_id
+        # TODO do we still need it?
         temp_user_list = []
         for user_line in users_list_outcome:
             if user_line.user_id not in users_should_not_be_informed:
                 temp_user_list.append(user_line)
         logging.info(f'User List crop due to doubling: {len(users_list_outcome)} --> {len(temp_user_list)}')
-        users_list_outcome = temp_user_list
+        return temp_user_list
 
+    def _filter_users_not_following_this_search(
+        self, record: LineInChangeLog, users_list_outcome: list[User]
+    ) -> list[User]:
         # 5. FOLLOW SEARCH. crop the list of users, excluding Users who is not following this search
         logging.info(f'Crop user list step 5: forum_search_num=={record.forum_search_num}')
+        temp_user_list: list[User] = []
         try:
-            temp_user_list = []
             sql_text_ = sqlalchemy.text("""
             SELECT u.user_id FROM users u
             LEFT JOIN user_pref_search_filtering upsf ON upsf.user_id=u.user_id and 'whitelist' = ANY(upsf.filter_name)
@@ -301,12 +325,10 @@ class NotificationComposer:
             )
             # if len(users_list_outcome) - len(temp_user_list) <=20:
             #     logging.info(f'Crop user list step 5: cropped users: {users_list_outcome - temp_user_list}')
-            users_list_outcome = temp_user_list
         except Exception as ee:
             logging.info('exception happened')
             logging.exception(ee)
-
-        return users_list_outcome
+        return temp_user_list
 
     def generate_notification_for_user(
         self,
