@@ -7,6 +7,7 @@ from sqlalchemy.engine.base import Connection
 
 from _dependencies.commons import Topics, get_app_config, publish_to_pubsub
 from _dependencies.misc import notify_admin
+from compose_notifications._utils.notif_common import SearchFollowingMode
 
 from .notif_common import (
     COORD_FORMAT,
@@ -532,26 +533,52 @@ class UserListFilter:
         try:
             sql_text_ = sqlalchemy.text("""
                 SELECT u.user_id FROM users u
-                LEFT JOIN user_pref_search_filtering upsf ON upsf.user_id=u.user_id and 'whitelist' = ANY(upsf.filter_name)
-                WHERE upsf.filter_name is not null AND NOT
+                LEFT JOIN user_pref_search_filtering upsf 
+                    ON upsf.user_id=u.user_id and 'whitelist' = ANY(upsf.filter_name)
+                WHERE 
+                    upsf.filter_name is not null AND NOT
                 (
-                    (	exists(select 1 from user_pref_search_whitelist upswls
-                            JOIN searches s ON search_forum_num=upswls.search_id 
-                            WHERE upswls.user_id=u.user_id and upswls.search_id != :a and upswls.search_following_mode=:b
-                            and s.status != 'СТОП')
+                    (	exists(
+                                -- user following any other active (not stopped) search
+                                select 1 FROM user_pref_search_whitelist upswls
+                                JOIN searches s ON search_forum_num=upswls.search_id 
+                                WHERE 
+                                    upswls.user_id=u.user_id 
+                                    and upswls.search_id != :forum_search_num 
+                                    and upswls.search_following_mode=:following_mode_on
+                                    and s.status != 'СТОП'
+                                )
                         AND
-                        not exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:b)
+                        not exists(
+                                -- user following this search
+                                select 1 from user_pref_search_whitelist upswls 
+                                WHERE 
+                                    upswls.user_id=u.user_id 
+                                    and upswls.search_id = :forum_search_num 
+                                    and upswls.search_following_mode=:following_mode_on
+                                    )
                     ) 
-                    OR
-                    exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:c)
+                    OR exists(
+                            -- user stopped following this search
+                            select 1 from user_pref_search_whitelist upswls 
+                            WHERE 
+                                upswls.user_id=u.user_id 
+                                and upswls.search_id = :forum_search_num 
+                                and upswls.search_following_mode=:following_mode_off
+                            )
                 )
                 OR upsf.filter_name is null
                 ;
             """)
-            rows = self.conn.execute(sql_text_, a=record.forum_search_num, b='👀 ', c='❌ ').fetchall()
+            rows = self.conn.execute(
+                sql_text_,
+                forum_search_num=record.forum_search_num,
+                following_mode_on=SearchFollowingMode.ON,
+                following_mode_off=SearchFollowingMode.OFF,
+            ).fetchall()
             logging.info(f'Crop user list step 5: len(rows)=={len(rows)}')
 
-            following_users_ids = [row[0] for row in rows]
+            following_users_ids = set([row[0] for row in rows])
             temp_user_list = [user for user in users_list_outcome if user.user_id in following_users_ids]
 
             logging.info(

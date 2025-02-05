@@ -1,6 +1,6 @@
 import pytest
 
-from compose_notifications._utils.notif_common import ChangeType, LineInChangeLog, User
+from compose_notifications._utils.notif_common import ChangeType, LineInChangeLog, SearchFollowingMode, User
 from compose_notifications._utils.notifications_maker import (
     MessageComposer,
     NotificationComposer,
@@ -94,7 +94,7 @@ class TestUsersFilter:
 
     def test_filter_users_with_prepared_messages_1(self, connection):
         line_in_change_log = LineInChangeLogFactory.build()
-        user = UserFactory.build(user_latitude='60.0000', user_longitude='60.0000', radius=1)
+        user = UserFactory.build()
 
         filterer = UserListFilter(connection, line_in_change_log, [user])
         cropped_users = filterer._filter_users_with_prepared_messages()
@@ -102,7 +102,7 @@ class TestUsersFilter:
 
     def test_filter_users_with_prepared_messages_2(self, connection, default_dict_notif_type):
         line_in_change_log = LineInChangeLogFactory.build()
-        user = UserFactory.build(user_latitude='60.0000', user_longitude='60.0000', radius=1)
+        user = UserFactory.build()
         user_model = db_factories.UserFactory.create_sync(user_id=user.user_id)
         mailing = db_factories.NotifMailingFactory.create_sync(dict_notif_type=default_dict_notif_type)
         db_factories.NotifByUserFactory.create_sync(
@@ -114,10 +114,16 @@ class TestUsersFilter:
         assert user not in cropped_users
 
     def test_filter_users_not_following_this_search_1(self, connection, default_dict_notif_type):
-        # TODO make this user following this search
-
         line_in_change_log = LineInChangeLogFactory.build()
         user = UserFactory.build()
+        user_model = db_factories.UserFactory.create_sync(user_id=user.user_id)
+        # s1 = db_factories.UserPrefSearchFilteringFactory.create_sync(user_id=user.user_id)
+        db_factories.UserPrefSearchWhitelistFactory.create_sync(
+            user_id=user.user_id,
+            search_id=line_in_change_log.forum_search_num,
+            search_following_mode=SearchFollowingMode.ON,
+        )
+
         filterer = UserListFilter(connection, line_in_change_log, [user])
         cropped_users = filterer._filter_users_not_following_this_search()
         assert user in cropped_users

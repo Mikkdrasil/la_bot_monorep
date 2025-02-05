@@ -60,6 +60,13 @@ class ChangeType(IntEnum):
     all = 30
 
 
+class SearchFollowingMode(str, Enum):
+    # in table 'user_pref_search_whitelist'
+    # TODO replace values in 'communicate' to this enum later
+    ON = '👀 '
+    OFF = '❌ '
+
+
 @dataclass
 class Message:
     name: str = ''

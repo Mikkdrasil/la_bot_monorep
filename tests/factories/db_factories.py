@@ -97,3 +97,17 @@ class DictSearchActivityFactory(BaseFactory[db_models.DictSearchActivity]):
 
 class CommentFactory(BaseFactory[db_models.Comment]):
     pass
+
+
+class UserPrefSearchWhitelistFactory(BaseFactory[db_models.UserPrefSearchWhitelist]):
+    pass
+
+
+class UserPrefSearchFiltering(db_models.Base):
+    # we have no model for user_pref_search_filtering, only Table. let's make it here
+    __table__ = db_models.t_user_pref_search_filtering
+    __mapper_args__ = {'primary_key': [db_models.t_user_pref_search_filtering.c.filter_id]}
+
+
+class UserPrefSearchFilteringFactory(BaseFactory[UserPrefSearchFiltering]):
+    pass
