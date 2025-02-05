@@ -102,7 +102,7 @@ class LineInChangeLog:
     age: int = 0
     age_wording: str = ''
     forum_folder: int = 0
-    activities: list[int] = field(default_factory=list)
+    activities: list[str] = field(default_factory=list)
     comments: list[Comment] = field(default_factory=list)
     comments_inforg: list[Comment] = field(default_factory=list)
     message: Any = None

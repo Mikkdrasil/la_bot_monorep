@@ -34,8 +34,9 @@ class LogRecordExtractor:
 
     def get_line(self) -> LineInChangeLog | None:
         line = self.select_first_record_from_change_log(self.record_id)
-        if line:
-            self.enrich_new_record(line)
+        if not line:
+            return None
+        self.enrich_new_record(line)
         return line
 
     def select_first_record_from_change_log(self, record_id: int | None = None) -> LineInChangeLog | None:
@@ -306,22 +307,19 @@ class LogRecordExtractor:
         """add the lists of current searches' activities to New Record"""
 
         try:
-            list_of_activities = self.conn.execute("""
-                SELECT sa.search_forum_num, dsa.activity_name from search_activities sa
+            query = sqlalchemy.text("""
+                SELECT dsa.activity_name from search_activities sa
                 LEFT JOIN dict_search_activities dsa ON sa.activity_type=dsa.activity_id
                 WHERE
-                sa.activity_type <> '9 - hq closed' AND
-                sa.activity_type <> '8 - info' AND
-                sa.activity_status = 'ongoing' ORDER BY sa.id; 
-                                                   """).fetchall()
+                    sa.search_forum_num = :a AND
+                    sa.activity_type <> '9 - hq closed' AND
+                    sa.activity_type <> '8 - info' AND
+                    sa.activity_status = 'ongoing' 
+                ORDER BY sa.id; 
+                                                   """)
 
-            # look for matching Forum Search Numbers in New Records List & Search Activities
-            temp_list_of_activities = []
-            for a_line in list_of_activities:
-                # when match is found
-                if r_line.forum_search_num == a_line[0]:
-                    temp_list_of_activities.append(a_line[1])
-            r_line.activities = temp_list_of_activities
+            list_of_activities = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
+            r_line.activities = [a_line[0] for a_line in list_of_activities]
 
             logging.info('New Record enriched with Search Activities')
 
