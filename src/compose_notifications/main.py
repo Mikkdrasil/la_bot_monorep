@@ -46,14 +46,24 @@ def sql_connect() -> sqlalchemy.engine.Engine:
     return sqlalchemy_get_pool(5, 60)
 
 
-def compose_new_records_from_change_log(conn: Connection) -> LineInChangeLog:
+def select_first_record_from_change_log(conn: Connection, record_id: int | None = None) -> LineInChangeLog:
     """compose the New Records list of the unique New Records in Change Log: one Record = One line in Change Log"""
 
-    delta_in_cl = conn.execute(
-        """SELECT search_forum_num, changed_field, new_value, id, change_type FROM change_log
-        WHERE notification_sent is NULL
-        OR notification_sent='s' ORDER BY id LIMIT 1; """
-    ).fetchall()
+    query = sqlalchemy.text(f"""
+        SELECT 
+            search_forum_num, changed_field, new_value, id, change_type 
+        FROM change_log
+        WHERE 
+            (notification_sent is NULL
+            OR notification_sent='s')
+            
+            {"AND id=:record_id" if record_id is not None else ""}
+
+        ORDER BY id LIMIT 1; 
+        """)
+
+    query_args = {'record_id': record_id} if record_id is not None else {}
+    delta_in_cl = conn.execute(query, **query_args).fetchall()
 
     if not delta_in_cl:
         logging.info('no new records found in PSQL')
@@ -70,6 +80,7 @@ def compose_new_records_from_change_log(conn: Connection) -> LineInChangeLog:
         return None
 
     logging.info(f'new record is {one_line_in_change_log}')
+
     new_record = LineInChangeLog()
     new_record.forum_search_num = one_line_in_change_log[0]
     new_record.changed_field = one_line_in_change_log[1]
@@ -81,6 +92,8 @@ def compose_new_records_from_change_log(conn: Connection) -> LineInChangeLog:
     #  of the scrip tech solution stopped working. The new filtering solution to be developed
 
     logging.info(f'New Record composed from Change Log: {str(new_record)}')
+
+    enrich_new_record(conn, new_record)
 
     return new_record
 
@@ -1009,18 +1022,9 @@ def delete_ended_search_following(conn: Connection, new_record: LineInChangeLog)
     return None
 
 
-def process_new_record(analytics_start_of_func, function_id, conn, new_record: LineInChangeLog):
-    delete_ended_search_following(conn, new_record)  # issue425
-    # enrich New Records List with all the updates that should be in notifications
-    enrich_new_record_from_searches(conn, new_record)
-    enrich_new_record_with_search_activities(conn, new_record)
-    enrich_new_record_with_managers(conn, new_record)
-    enrich_new_record_with_comments(conn, 'all', new_record)
-    enrich_new_record_with_comments(conn, 'inforg', new_record)
-    enrich_new_record_with_clickable_name(new_record)
-    enrich_new_record_with_emoji(new_record)
-    enrich_new_record_with_com_message_texts(new_record)
-
+def create_user_notifications_from_change_log_record(
+    analytics_start_of_func, function_id, conn, new_record: LineInChangeLog
+):
     # compose Users List: all the notifications recipients' details
     admins_list, testers_list = get_list_of_admins_and_testers(conn)  # for debug purposes
     list_of_users = compose_users_list_from_users(conn, new_record)
@@ -1045,6 +1049,19 @@ def process_new_record(analytics_start_of_func, function_id, conn, new_record: L
     # final step – update statistics on how many users received notifications on new searches
     record_notification_statistics(conn)
     return new_record, analytics_iterations_finish
+
+
+def enrich_new_record(conn: Connection, new_record: LineInChangeLog) -> None:
+    delete_ended_search_following(conn, new_record)  # issue425
+    # enrich New Records List with all the updates that should be in notifications
+    enrich_new_record_from_searches(conn, new_record)
+    enrich_new_record_with_search_activities(conn, new_record)
+    enrich_new_record_with_managers(conn, new_record)
+    enrich_new_record_with_comments(conn, 'all', new_record)
+    enrich_new_record_with_comments(conn, 'inforg', new_record)
+    enrich_new_record_with_clickable_name(new_record)
+    enrich_new_record_with_emoji(new_record)
+    enrich_new_record_with_com_message_texts(new_record)
 
 
 def main(event: dict, context: str) -> Any:  # noqa
@@ -1079,44 +1096,42 @@ def main(event: dict, context: str) -> Any:  # noqa
         logging.info('script finished')
         return
 
+    list_of_change_log_ids = []
     pool = sql_connect()
     with pool.connect() as conn:
         # compose New Records List: the delta from Change log
-        new_record = compose_new_records_from_change_log(conn)
+        new_record = select_first_record_from_change_log(conn)
+        # TODO enrich... move here
 
         # only if there are updates in Change Log
         if new_record:
-            new_record, analytics_iterations_finish = process_new_record(
+            new_record, analytics_iterations_finish = create_user_notifications_from_change_log_record(
                 analytics_start_of_func, function_id, conn, new_record
             )
 
-        check_if_need_compose_more(conn, function_id)
-
-        list_of_change_log_ids = []
-        if new_record:
             try:
                 list_of_change_log_ids = [new_record.change_id]
             except Exception as e:  # noqa
                 logging.exception(e)
 
-        check_and_save_event_id(
-            context,
-            'finish',
-            function_id,
-            list_of_change_log_ids,
-            triggered_by_func_id,
-            FUNC_NAME,
-            INTERVAL_TO_CHECK_PARALLEL_FUNCTION_SECONDS,
-        )
+        check_if_need_compose_more(conn, function_id)
 
-        analytics_finish = datetime.datetime.now()
-        if new_record:
-            duration_saving = round((analytics_finish - analytics_iterations_finish).total_seconds(), 2)
-            logging.info(f'time: function data saving – {duration_saving} sec')
+    check_and_save_event_id(
+        context,
+        'finish',
+        function_id,
+        list_of_change_log_ids,
+        triggered_by_func_id,
+        FUNC_NAME,
+        INTERVAL_TO_CHECK_PARALLEL_FUNCTION_SECONDS,
+    )
 
-        duration_full = round((analytics_finish - analytics_start_of_func).total_seconds(), 2)
-        logging.info(f'time: function full end-to-end – {duration_full} sec')
+    analytics_finish = datetime.datetime.now()
+    if new_record:
+        duration_saving = round((analytics_finish - analytics_iterations_finish).total_seconds(), 2)
+        logging.info(f'time: function data saving – {duration_saving} sec')
 
-        logging.info('script finished')
+    duration_full = round((analytics_finish - analytics_start_of_func).total_seconds(), 2)
+    logging.info(f'time: function full end-to-end – {duration_full} sec')
 
-    pool.dispose()
+    logging.info('script finished')

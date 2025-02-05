@@ -40,6 +40,10 @@ class ChangeLogFactory(BaseFactory[db_models.ChangeLog]):
     """
 
 
+class SearchFactory(BaseFactory[db_models.Search]):
+    pass
+
+
 class UserFactory(BaseFactory[db_models.User]):
     status = None
     role = 'new_member'

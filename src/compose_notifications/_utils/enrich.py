@@ -148,7 +148,7 @@ def get_coords_from_list(input_list):
         return None, None
 
 
-def compose_com_msg_on_first_post_change(record: LineInChangeLog) -> str:
+def compose_com_msg_on_first_post_change(record: LineInChangeLog) -> None:
     """compose the common, user-independent message on search first post change"""
 
     message = record.new_value
@@ -223,10 +223,10 @@ def compose_com_msg_on_first_post_change(record: LineInChangeLog) -> str:
     else:
         resulting_message = ''
 
-    return resulting_message
+    record.message = resulting_message
 
 
-def compose_com_msg_on_inforg_comments(line: LineInChangeLog):
+def compose_com_msg_on_inforg_comments(line: LineInChangeLog) -> None:
     """compose the common, user-independent message on INFORG search comments change"""
 
     # region_to_show = f' ({region})' if region else ''
@@ -247,10 +247,10 @@ def compose_com_msg_on_inforg_comments(line: LineInChangeLog):
         if line.region:
             msg_2 = f' ({line.region})'
 
-    return msg_1, msg_2, msg_3
+    line.message = msg_1, msg_2, msg_3
 
 
-def compose_com_msg_on_new_comments(line: LineInChangeLog):
+def compose_com_msg_on_new_comments(line: LineInChangeLog) -> None:
     """compose the common, user-independent message on ALL search comments change"""
 
     url_prefix = 'https://lizaalert.org/forum/memberlist.php?mode=viewprofile&u='
@@ -267,7 +267,7 @@ def compose_com_msg_on_new_comments(line: LineInChangeLog):
 
     msg = f'Новые комментарии по {activity} {line.clickable_name}:\n{msg}' if msg else ''
 
-    return msg, None
+    line.message = msg, None  # TODO ???
 
 
 def add_tel_link(incoming_text: str, modifier: str = 'all') -> str:
@@ -293,7 +293,7 @@ def add_tel_link(incoming_text: str, modifier: str = 'all') -> str:
     return outcome_text
 
 
-def compose_com_msg_on_new_topic(line: LineInChangeLog):
+def compose_com_msg_on_new_topic(line: LineInChangeLog) -> None:
     """compose the common, user-independent message on new topic (search, event)"""
 
     start = line.start_time
@@ -313,20 +313,25 @@ def compose_com_msg_on_new_topic(line: LineInChangeLog):
     # FIXME ^^^
 
     if days_since_topic_start >= 2:  # we do not notify users on "new" topics appeared >=2 days ago:
-        return [None, None, None], None, 'y'  # topic to be ignored
+        line.message = [None, None, None]  # 1 - person, 2 - activities, 3 - managers
+        line.message_object = None
+        line.ignore = 'y'  # topic to be ignored
+        return
 
     message = MessageNewTopic()
 
     if topic_type_id == 10:  # new event
         clickable_name = f'🗓️Новое мероприятие!\n{clickable_name}'
         message.clickable_name = clickable_name
-        return [clickable_name, None, None], message, line_ignore
+        line.message = [clickable_name, None, None]
+        line.message_object = message
+        line.ignore = line_ignore
 
     # 1. List of activities – user-independent
     msg_1 = ''
     if activities:
-        for line in activities:
-            msg_1 += f'{line}\n'
+        for act_line in activities:
+            msg_1 += f'{act_line}\n'
     message.activities = msg_1
 
     # 2. Person
@@ -342,8 +347,8 @@ def compose_com_msg_on_new_topic(line: LineInChangeLog):
             managers_list = ast.literal_eval(managers)
             msg_3 += 'Ответственные:'
             for manager in managers_list:
-                line = add_tel_link(manager)
-                msg_3 += f'\n &#8226; {line}'
+                manager_line = add_tel_link(manager)
+                msg_3 += f'\n &#8226; {manager_line}'
 
         except Exception as e:
             logging.error('Not able to compose New Search Message text with Managers: ' + str(e))
@@ -352,11 +357,12 @@ def compose_com_msg_on_new_topic(line: LineInChangeLog):
         message.managers = msg_3
 
     logging.info('msg 2 + msg 1 + msg 3: ' + str(msg_2) + ' // ' + str(msg_1) + ' // ' + str(msg_3))
+    line.message = [msg_2, msg_1, msg_3]  # 1 - person, 2 - activities, 3 - managers
+    line.message_object = message
+    line.ignore = line_ignore
 
-    return [msg_2, msg_1, msg_3], message, line_ignore  # 1 - person, 2 - activities, 3 - managers
 
-
-def compose_com_msg_on_status_change(line: LineInChangeLog):
+def compose_com_msg_on_status_change(line: LineInChangeLog) -> None:
     """compose the common, user-independent message on search status change"""
 
     status = line.status
@@ -374,16 +380,16 @@ def compose_com_msg_on_status_change(line: LineInChangeLog):
 
     msg_2 = f' ({region})' if region else None
 
-    return msg_1, msg_2
+    line.message = msg_1, msg_2
 
 
-def compose_com_msg_on_title_change(line: LineInChangeLog):
+def compose_com_msg_on_title_change(line: LineInChangeLog) -> None:
     """compose the common, user-independent message on search title change"""
 
     activity = 'мероприятия' if line.topic_type_id == 10 else 'поиска'
     msg = f'{line.title} – обновление заголовка {activity} по {line.clickable_name}'
 
-    return msg
+    line.message = msg
 
 
 def enrich_new_record_with_com_message_texts(line: LineInChangeLog) -> None:
@@ -393,17 +399,17 @@ def enrich_new_record_with_com_message_texts(line: LineInChangeLog) -> None:
         last_line = line
 
         if line.change_type == 0:  # new topic: new search, new event
-            line.message, line.message_object, line.ignore = compose_com_msg_on_new_topic(line)
+            compose_com_msg_on_new_topic(line)
         elif line.change_type == 1 and line.topic_type_id in {0, 1, 2, 3, 4, 5}:  # status change for search:
-            line.message = compose_com_msg_on_status_change(line)
+            compose_com_msg_on_status_change(line)
         elif line.change_type == 2:  # 'title_change':
-            line.message = compose_com_msg_on_title_change(line)
+            compose_com_msg_on_title_change(line)
         elif line.change_type == 3:  # 'replies_num_change':
-            line.message = compose_com_msg_on_new_comments(line)
+            compose_com_msg_on_new_comments(line)
         elif line.change_type == 4:  # 'inforg_replies':
-            line.message = compose_com_msg_on_inforg_comments(line)
+            compose_com_msg_on_inforg_comments(line)
         elif line.change_type == 8:  # first_post_change
-            line.message = compose_com_msg_on_first_post_change(line)
+            compose_com_msg_on_first_post_change(line)
 
         logging.info('New Record enriched with common Message Text')
 

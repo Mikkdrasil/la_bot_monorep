@@ -25,7 +25,7 @@ def test_compose_individual_message_on_new_search():
 
 
 def test_compose_new_records_from_change_log():
-    res = run_smoke(main.compose_new_records_from_change_log)
+    res = run_smoke(main.select_first_record_from_change_log)
     pass
 
 
@@ -95,7 +95,7 @@ def test_process_mailing_id():
 
 
 def test_process_new_record():
-    res = run_smoke(main.process_new_record)
+    res = run_smoke(main.create_user_notifications_from_change_log_record)
     pass
 
 

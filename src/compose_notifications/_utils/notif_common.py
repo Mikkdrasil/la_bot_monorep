@@ -8,6 +8,36 @@ COORD_PATTERN = r'0?[3-8]\d\.\d{1,10}[\s\w,]{0,10}[01]?[2-9]\d\.\d{1,10}'
 
 
 @dataclass
+class Message:
+    name: str = ''
+    age: str | int = ''
+    display_name: str = ''
+    clickable_name: str = ''
+
+
+@dataclass
+class MessageNewTopic(Message):
+    city_coords: Any = None
+    hq_coords: Any = None
+    activities: Any = None
+    managers: Any = None
+    hint_on_coords: Any = None
+    hint_on_something: Any = None  # FIXME
+
+
+@dataclass
+class Comment:
+    url: str = None
+    text: str = None
+    author_nickname: str = None
+    author_link: str = None
+    search_forum_num: Any = None
+    num: Any = None
+    forum_global_id: Any = None
+    ignore: Any = None
+
+
+@dataclass
 class LineInChangeLog:
     forum_search_num: int = None
     topic_type_id: int = None
@@ -28,7 +58,7 @@ class LineInChangeLog:
     comments: Any = None
     comments_inforg: Any = None
     message: Any = None
-    message_object: Any = None  # FIXME
+    message_object: Any | Message | MessageNewTopic = None  # FIXME
     processed: Any = None
     managers: list[str] = field(default_factory=list)
     start_time: datetime.datetime = field(default_factory=datetime.datetime.now)
@@ -62,33 +92,3 @@ class User:
     user_role: str = None
     age_periods: list = None
     radius: float = None
-
-
-@dataclass
-class Message:
-    name: str = ''
-    age: str | int = ''
-    display_name: str = ''
-    clickable_name: str = ''
-
-
-@dataclass
-class MessageNewTopic(Message):
-    city_coords: Any = None
-    hq_coords: Any = None
-    activities: Any = None
-    managers: Any = None
-    hint_on_coords: Any = None
-    hint_on_something: Any = None  # FIXME
-
-
-@dataclass
-class Comment:
-    url: str = None
-    text: str = None
-    author_nickname: str = None
-    author_link: str = None
-    search_forum_num: Any = None
-    num: Any = None
-    forum_global_id: Any = None
-    ignore: Any = None
