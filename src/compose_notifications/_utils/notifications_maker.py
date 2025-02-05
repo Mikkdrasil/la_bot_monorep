@@ -516,17 +516,21 @@ class NotificationComposer:
         """mark all the new records in SQL as processed, to avoid processing in the next iteration"""
 
         try:
-            if new_record.processed:
-                if not new_record.ignore:
-                    sql_text = sqlalchemy.text("""UPDATE change_log SET notification_sent = 'y' WHERE id=:a;""")
-                    self.conn.execute(sql_text, a=new_record.change_log_id)
-                    logging.info(f'The New Record {new_record.change_log_id} was marked as processed in PSQL')
-                else:
-                    sql_text = sqlalchemy.text("""UPDATE change_log SET notification_sent = 'n' WHERE id=:a;""")
-                    self.conn.execute(sql_text, a=new_record.change_log_id)
-                    logging.info(f'The New Record {new_record.change_log_id} was marked as IGNORED in PSQL')
+            if not new_record.processed:
+                return
+            if not new_record.ignore:
+                sql_text = sqlalchemy.text("""
+                    UPDATE change_log SET notification_sent = 'y' WHERE id=:a;
+                                            """)
+                self.conn.execute(sql_text, a=new_record.change_log_id)
+                logging.info(f'The New Record {new_record.change_log_id} was marked as processed in PSQL')
+            else:
+                sql_text = sqlalchemy.text("""
+                    UPDATE change_log SET notification_sent = 'n' WHERE id=:a;
+                                            """)
+                self.conn.execute(sql_text, a=new_record.change_log_id)
+                logging.info(f'The New Record {new_record.change_log_id} was marked as IGNORED in PSQL')
 
-            logging.info('All Updates are marked as processed in Change Log')
 
         except Exception as e:
             # FIXME – should be a smarter way to re-process the record instead of just marking everything as processed
@@ -541,8 +545,6 @@ class NotificationComposer:
             logging.info('Due to error, all Updates are marked as processed in Change Log')
             notify_admin('ERROR: Not able to mark Updates as Processed in Change Log!')
             # FIXME ^^^
-
-        return None
 
     def mark_new_comments_as_processed(self, record: LineInChangeLog) -> None:
         """mark in SQL table Comments all the comments that were processed at this step, basing on search_forum_id"""
@@ -582,7 +584,7 @@ class NotificationComposer:
 
 
 class MessageComposer:
-    def __init__(self, new_record: LineInChangeLog, user: User, region_to_show):
+    def __init__(self, new_record: LineInChangeLog, user: User, region_to_show: str|None):
         self.new_record = new_record
         self.user = user
         self.region_to_show = region_to_show

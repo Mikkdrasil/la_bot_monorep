@@ -27,7 +27,7 @@ class NotSentChangeLogFactory(db_factories.ChangeLogFactory):
     changed_field = 'new_search'
 
 
-class LineInChageFactory(DataclassFactory[LineInChangeLog]):
+class LineInChangeLogFactory(DataclassFactory[LineInChangeLog]):
     topic_type_id = TopicType.search_regular
     forum_search_num = 1
     start_time = datetime.now()
@@ -38,7 +38,7 @@ class LineInChageFactory(DataclassFactory[LineInChangeLog]):
 
 @pytest.fixture
 def line_in_change_log() -> LineInChangeLog:
-    return LineInChageFactory.build()
+    return LineInChangeLogFactory.build()
 
 
 @pytest.fixture

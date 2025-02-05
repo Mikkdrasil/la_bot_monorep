@@ -95,7 +95,9 @@ class LogRecordExtractor:
 
         finished_statuses = ['Завершен', 'НЖ', 'НП', 'Найден']
         if new_record.change_type == ChangeType.topic_status_change and new_record.status in finished_statuses:
-            stmt = sqlalchemy.text("""DELETE FROM user_pref_search_whitelist WHERE search_id=:a;""")
+            stmt = sqlalchemy.text("""
+                DELETE FROM user_pref_search_whitelist WHERE search_id=:a;
+                                   """)
             self.conn.execute(stmt, a=new_record.forum_search_num)
             logging.info(
                 f'Search id={new_record.forum_search_num} with status {new_record.status} is been deleted from user_pref_search_whitelist.'
@@ -104,7 +106,7 @@ class LogRecordExtractor:
 
     def define_family_name(self, title_string: str, predefined_fam_name: str | None) -> str:
         """define family name if it's not available as A SEPARATE FIELD in Searches table
-        TODO can we move it outside?
+        TODO can we move it outside? And make more safer
         """
 
         # if family name is already defined
@@ -168,7 +170,7 @@ class LogRecordExtractor:
                 logging.info('New Record WERE NOT enriched from Searches as there was no record in searches')
                 logging.info(f'New Record is {r_line}')
                 logging.info(f'extract from searches is {s_line}')
-                logging.exception('no search in searches table!')
+                logging.exception(f'no search in searches table! forum_search_num={r_line.forum_search_num}')
                 return
 
             r_line.status = s_line[1]
