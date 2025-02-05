@@ -17,19 +17,10 @@ from _dependencies.misc import (
     process_pubsub_message_v2,
 )
 
-from ._utils.enrich import (
-    enrich_new_record_from_searches,
-    enrich_new_record_with_clickable_name,
-    enrich_new_record_with_com_message_texts,
-    enrich_new_record_with_comments,
-    enrich_new_record_with_emoji,
-    enrich_new_record_with_managers,
-    enrich_new_record_with_search_activities,
-)
+from ._utils.log_record_composer import LogRecordExtractor
 from ._utils.notif_common import (
     COORD_FORMAT,
     SEARCH_TOPIC_TYPES,
-    CommentsType,
     LineInChangeLog,
     User,
     define_dist_and_dir_to_search,
@@ -48,59 +39,6 @@ CLEANER_RE = re.compile('<.*?>')
 
 def sql_connect() -> sqlalchemy.engine.Engine:
     return sqlalchemy_get_pool(5, 60)
-
-
-def select_first_record_from_change_log(conn: Connection, record_id: int | None = None) -> LineInChangeLog | None:
-    """compose the New Records list of the unique New Records in Change Log: one Record = One line in Change Log"""
-
-    query = sqlalchemy.text(f"""
-        SELECT 
-            search_forum_num, changed_field, new_value, id, change_type 
-        FROM change_log
-        WHERE 
-            (notification_sent is NULL
-            OR notification_sent='s')
-            
-            {"AND id=:record_id" if record_id is not None else ""}
-
-        ORDER BY id LIMIT 1; 
-        """)
-
-    query_args = {'record_id': record_id} if record_id is not None else {}
-    delta_in_cl = conn.execute(query, **query_args).fetchall()
-
-    if not delta_in_cl:
-        logging.info('no new records found in PSQL')
-        return None
-
-    if not len(list(delta_in_cl)) > 0:
-        logging.info(f'new record is found in PSQL, however it is not list: {delta_in_cl}')
-        return None
-
-    one_line_in_change_log = [i for i in delta_in_cl[0]]
-
-    if not one_line_in_change_log:
-        logging.info(f'new record is found in PSQL, however it is not list: {delta_in_cl}, {one_line_in_change_log}')
-        return None
-
-    logging.info(f'new record is {one_line_in_change_log}')
-
-    new_record = LineInChangeLog(
-        forum_search_num=one_line_in_change_log[0],
-        changed_field=one_line_in_change_log[1],
-        new_value=one_line_in_change_log[2],
-        change_id=one_line_in_change_log[3],
-        change_type=one_line_in_change_log[4],
-    )
-
-    # TODO – there was a filtering for duplication: Inforg comments vs All Comments, but after restructuring
-    #  of the scrip tech solution stopped working. The new filtering solution to be developed
-
-    logging.info(f'New Record composed from Change Log: {str(new_record)}')
-
-    enrich_new_record(conn, new_record)
-
-    return new_record
 
 
 def compose_users_list_from_users(conn: Connection, new_record: LineInChangeLog) -> list[User]:
@@ -1022,18 +960,6 @@ def check_if_need_compose_more(conn: sqlalchemy.engine.Connection, function_id: 
     return None
 
 
-def delete_ended_search_following(conn: Connection, new_record: LineInChangeLog) -> None:  # issue425
-    ### Delete from user_pref_search_whitelist if the search goes to one of ending statuses
-
-    if new_record.change_type == 1 and new_record.status in ['Завершен', 'НЖ', 'НП', 'Найден']:
-        stmt = sqlalchemy.text("""DELETE FROM user_pref_search_whitelist WHERE search_id=:a;""")
-        conn.execute(stmt, a=new_record.forum_search_num)
-        logging.info(
-            f'Search id={new_record.forum_search_num} with status {new_record.status} is been deleted from user_pref_search_whitelist.'
-        )
-    return None
-
-
 def enrich_users_list_with_age_periods(conn: Connection, list_of_users: list[User]) -> None:
     """add the data on Lost people age notification preferences from user_pref_age into users List"""
 
@@ -1086,8 +1012,8 @@ def enrich_users_list_with_radius(conn: Connection, list_of_users: list[User]) -
 
 
 def create_user_notifications_from_change_log_record(
-    analytics_start_of_func, function_id, conn, new_record: LineInChangeLog
-):
+    analytics_start_of_func: datetime.datetime, function_id: int, conn: Connection, new_record: LineInChangeLog
+) -> datetime.datetime:
     # compose Users List: all the notifications recipients' details
     list_of_users = compose_users_list_from_users(conn, new_record)
 
@@ -1108,20 +1034,7 @@ def create_user_notifications_from_change_log_record(
 
     # final step – update statistics on how many users received notifications on new searches
     record_notification_statistics(conn)
-    return new_record, analytics_iterations_finish
-
-
-def enrich_new_record(conn: Connection, new_record: LineInChangeLog) -> None:
-    delete_ended_search_following(conn, new_record)  # issue425
-    # enrich New Records List with all the updates that should be in notifications
-    enrich_new_record_from_searches(conn, new_record)
-    enrich_new_record_with_search_activities(conn, new_record)
-    enrich_new_record_with_managers(conn, new_record)
-    enrich_new_record_with_comments(conn, CommentsType.all, new_record)
-    enrich_new_record_with_comments(conn, CommentsType.inforg, new_record)
-    enrich_new_record_with_clickable_name(new_record)
-    enrich_new_record_with_emoji(new_record)
-    enrich_new_record_with_com_message_texts(new_record)
+    return analytics_iterations_finish  # TODO can we move it out of this function?
 
 
 def main(event: dict, context: str) -> Any:  # noqa
@@ -1160,12 +1073,12 @@ def main(event: dict, context: str) -> Any:  # noqa
     pool = sql_connect()
     with pool.connect() as conn:
         # compose New Records List: the delta from Change log
-        new_record = select_first_record_from_change_log(conn)
-        # TODO enrich... move here
+        new_record = LogRecordExtractor(conn).get_line()
+        # TODO change to class
 
         # only if there are updates in Change Log
         if new_record:
-            new_record, analytics_iterations_finish = create_user_notifications_from_change_log_record(
+            analytics_iterations_finish = create_user_notifications_from_change_log_record(
                 analytics_start_of_func, function_id, conn, new_record
             )
 

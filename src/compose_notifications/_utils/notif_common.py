@@ -87,7 +87,7 @@ class Comment:
 
 @dataclass
 class LineInChangeLog:
-    forum_search_num: int = 0
+    forum_search_num: int | None = None
     topic_type_id: int = 0
     change_type: int = 0  # it is int from 0 to 99 which represents "change_type" column in change_log
     changed_field: Any = None
@@ -101,7 +101,7 @@ class LineInChangeLog:
     title: str = ''
     age: int = 0
     age_wording: Any = None
-    forum_folder: int = None
+    forum_folder: int = 0
     activities: list[int] = field(default_factory=list)
     comments: list[Comment] = field(default_factory=list)
     comments_inforg: list[Comment] = field(default_factory=list)
@@ -112,8 +112,8 @@ class LineInChangeLog:
     start_time: datetime.datetime = field(default_factory=datetime.datetime.now)
     ignore: bool = False
     region: Any = None
-    search_latitude: Any = None
-    search_longitude: Any = None
+    search_latitude: str | None = None
+    search_longitude: str | None = None
     coords_change_type: Any = None
     city_locations: Any = None
     display_name: Any = None
@@ -125,8 +125,8 @@ class LineInChangeLog:
 
 @dataclass
 class User:
-    user_id: int = None
-    username_telegram: str = None
+    user_id: int = 0
+    username_telegram: str | None = None
     # notification_preferences: str = None
     # notif_pref_ids_list: list = None
     all_notifs: list = None
@@ -140,36 +140,6 @@ class User:
     user_role: str = None  # not used
     age_periods: list = None
     radius: int = 0
-
-
-def define_family_name(title_string: str, predefined_fam_name: str | None) -> str:
-    """define family name if it's not available as A SEPARATE FIELD in Searches table"""
-
-    # if family name is already defined
-    if predefined_fam_name:
-        fam_name = predefined_fam_name
-
-    # if family name needs to be defined
-    else:
-        string_by_word = title_string.split()
-        # exception case: when Family Name is third word
-        # it happens when first two either Найден Жив or Найден Погиб with different word forms
-        if string_by_word[0].lower().startswith('найд'):
-            fam_name = string_by_word[2]
-
-        # case when "Поиск приостановлен"
-        elif string_by_word[1].lower().startswith('приостан'):
-            fam_name = string_by_word[2]
-
-        # case when "Поиск остановлен"
-        elif string_by_word[1].lower().startswith('остановл'):
-            fam_name = string_by_word[2]
-
-        # all the other cases
-        else:
-            fam_name = string_by_word[1]
-
-    return fam_name
 
 
 def add_tel_link(incoming_text: str, modifier: str = 'all') -> str:
@@ -195,38 +165,42 @@ def add_tel_link(incoming_text: str, modifier: str = 'all') -> str:
     return outcome_text
 
 
-def define_dist_and_dir_to_search(search_lat: str, search_lon: str, user_let: float, user_lon: float):
+def calc_direction(lat_1: float, lon_1: float, lat_2: float, lon_2: float) -> str:
+    points = [
+        '&#8593;&#xFE0E;',
+        '&#x2197;&#xFE0F;',
+        '&#8594;&#xFE0E;',
+        '&#8600;&#xFE0E;',
+        '&#8595;&#xFE0E;',
+        '&#8601;&#xFE0E;',
+        '&#8592;&#xFE0E;',
+        '&#8598;&#xFE0E;',
+    ]
+    bearing = calc_bearing(lat_1, lon_1, lat_2, lon_2)
+    bearing += 22.5
+    bearing = bearing % 360
+    bearing = int(bearing / 45)  # values 0 to 7
+    nsew = points[bearing]
+
+    return nsew
+
+
+def calc_bearing(lat_2: float, lon_2: float, lat_1: float, lon_1: float) -> float:
+    d_lon_ = lon_2 - lon_1
+    x = math.cos(math.radians(lat_2)) * math.sin(math.radians(d_lon_))
+    y = math.cos(math.radians(lat_1)) * math.sin(math.radians(lat_2)) - math.sin(math.radians(lat_1)) * math.cos(
+        math.radians(lat_2)
+    ) * math.cos(math.radians(d_lon_))
+    bearing = math.atan2(x, y)  # used to determine the quadrant
+    bearing = math.degrees(bearing)
+
+    return bearing
+
+
+def define_dist_and_dir_to_search(
+    search_lat: str, search_lon: str, user_let: float, user_lon: float
+) -> tuple[float, str]:
     """define direction & distance from user's home coordinates to search coordinates"""
-
-    def calc_bearing(lat_2, lon_2, lat_1, lon_1):
-        d_lon_ = lon_2 - lon_1
-        x = math.cos(math.radians(lat_2)) * math.sin(math.radians(d_lon_))
-        y = math.cos(math.radians(lat_1)) * math.sin(math.radians(lat_2)) - math.sin(math.radians(lat_1)) * math.cos(
-            math.radians(lat_2)
-        ) * math.cos(math.radians(d_lon_))
-        bearing = math.atan2(x, y)  # used to determine the quadrant
-        bearing = math.degrees(bearing)
-
-        return bearing
-
-    def calc_direction(lat_1, lon_1, lat_2, lon_2):
-        points = [
-            '&#8593;&#xFE0E;',
-            '&#x2197;&#xFE0F;',
-            '&#8594;&#xFE0E;',
-            '&#8600;&#xFE0E;',
-            '&#8595;&#xFE0E;',
-            '&#8601;&#xFE0E;',
-            '&#8592;&#xFE0E;',
-            '&#8598;&#xFE0E;',
-        ]
-        bearing = calc_bearing(lat_1, lon_1, lat_2, lon_2)
-        bearing += 22.5
-        bearing = bearing % 360
-        bearing = int(bearing / 45)  # values 0 to 7
-        nsew = points[bearing]
-
-        return nsew
 
     earth_radius = 6373.0  # radius of the Earth
 
