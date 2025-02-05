@@ -30,6 +30,7 @@ class BaseFactory(SQLAlchemyFactory[T]):
     __set_relationships__ = True
     __session__ = get_session
     __allow_none_optionals__ = False
+    __set_primary_key__ = False  # primary keys generated automatically by postgres
 
 
 class NotifByUserFactory(BaseFactory[db_models.NotifByUser]):
