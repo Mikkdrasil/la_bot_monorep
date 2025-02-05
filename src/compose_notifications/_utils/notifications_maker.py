@@ -98,34 +98,6 @@ class NotificationComposer:
         # TODO: DEBUG
         return record_was_processed_already
 
-    def get_from_sql_list_of_users_with_prepared_message(self, change_log_id: int) -> list[int]:
-        """check what is the list of users for whom we already composed messages for the given change_log record"""
-
-        sql_text_ = sqlalchemy.text("""
-            SELECT
-                user_id
-            FROM
-                notif_by_user
-            WHERE
-                created IS NOT NULL AND
-                change_log_id=:a
-
-            /*action='get_from_sql_list_of_users_with_already_composed_messages 2.0'*/
-            ;
-            """)
-
-        raw_data_ = self.conn.execute(sql_text_, a=change_log_id).fetchall()
-        # TODO: to delete
-        logging.info('list of user with composed messages:')
-        logging.info(raw_data_)
-
-        users_who_were_composed = [line[0] for line in raw_data_]
-
-        logging.info('users_who_should_not_be_informed:')
-        logging.info(users_who_were_composed)
-        logging.info('in total ' + str(len(users_who_were_composed)))
-        return users_who_were_composed
-
     def crop_user_list(
         self,
         users_list_incoming: list[User],
@@ -133,170 +105,10 @@ class NotificationComposer:
     ):
         """crop user_list to only affected users
         TODO can we move it to UsersListComposer?"""
-
-        users_list_outcome = users_list_incoming
-
-        users_list_outcome = self._filter_inforg_double_notification_for_users(record, users_list_outcome)
-
-        users_list_outcome = self._filter_users_by_age_settings(record, users_list_outcome)
-
-        users_list_outcome = self._filter_users_by_search_radius(record, users_list_outcome)
-
-        users_list_outcome = self._filter_users_with_prepared_messages(record, users_list_outcome)
-
-        users_list_outcome = self._filter_users_not_following_this_search(record, users_list_outcome)
+        filterer = UserListFilter(self.conn, record, users_list_incoming)
+        users_list_outcome = filterer.apply()
 
         return users_list_outcome
-
-    def _filter_inforg_double_notification_for_users(
-        self, record: LineInChangeLog, users_list_outcome: list[User]
-    ) -> list[User]:
-        # 1. INFORG 2X notifications. crop the list of users, excluding Users who receives all types of notifications
-        # (otherwise it will be doubling for them)
-        temp_user_list: list[User] = []
-        if record.change_type != ChangeType.topic_inforg_comment_new:
-            logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(users_list_outcome)}')
-        else:
-            for user_line in users_list_outcome:
-                # if this record is about inforg_comments and user already subscribed to all comments
-                check_passed = not user_line.all_notifs
-                logging.info(
-                    f'Inforg 2x CHECK for {user_line.user_id} is {"OK" if check_passed else "FAIL"}, record {record.change_type}, '
-                    f'user {user_line.user_id} {user_line.all_notifs}. '
-                    f'record {record.forum_search_num}'
-                )
-                if check_passed:
-                    temp_user_list.append(user_line)
-            logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(temp_user_list)}')
-        return temp_user_list
-
-    def _filter_users_by_age_settings(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
-        # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
-        if not (record.age_min or record.age_max):
-            logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
-            return users_list_outcome
-
-        temp_user_list: list[User] = []
-        search_age_range = (record.age_min, record.age_max)
-
-        for user_line in users_list_outcome:
-            age_requirements_met = check_if_age_requirements_met(search_age_range, user_line.age_periods)
-            logging.info(
-                f'AGE CHECK for {user_line.user_id} is {"OK" if age_requirements_met else "FAIL"}, record {search_age_range}, '
-                f'user {user_line.age_periods}. record {record.forum_search_num}'
-            )
-            if age_requirements_met:
-                temp_user_list.append(user_line)
-
-        logging.info(f'User List crop due to ages: {len(users_list_outcome)} --> {len(temp_user_list)}')
-        return temp_user_list
-
-    def _filter_users_by_search_radius(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
-        # 3. RADIUS. crop the list of users, excluding Users who does want to receive notifications within the radius
-        temp_user_list = []
-        try:
-            search_lat = record.search_latitude
-            search_lon = record.search_longitude
-            list_of_city_coords = None
-            if record.city_locations and record.city_locations != 'None':
-                non_geolocated = [x for x in eval(record.city_locations) if isinstance(x, str)]
-                list_of_city_coords = eval(record.city_locations) if not non_geolocated else None
-
-            # CASE 3.1. When exact coordinates of Search Headquarters are indicated
-            if search_lat and search_lon:
-                for user_line in users_list_outcome:
-                    if not (user_line.radius and user_line.user_latitude and user_line.user_longitude):
-                        temp_user_list.append(user_line)
-                        continue
-                    user_lat = user_line.user_latitude
-                    user_lon = user_line.user_longitude
-                    actual_distance, direction = define_dist_and_dir_to_search(
-                        search_lat, search_lon, user_lat, user_lon
-                    )
-                    actual_distance = int(actual_distance)
-                    if actual_distance <= user_line.radius:
-                        temp_user_list.append(user_line)
-
-            # CASE 3.2. When exact coordinates of a Place are geolocated
-            elif list_of_city_coords:
-                for user_line in users_list_outcome:
-                    if not (user_line.radius and user_line.user_latitude and user_line.user_longitude):
-                        temp_user_list.append(user_line)
-                        continue
-                    user_lat = user_line.user_latitude
-                    user_lon = user_line.user_longitude
-
-                    for city_coords in list_of_city_coords:
-                        search_lat, search_lon = city_coords
-                        if not search_lat or not search_lon:
-                            continue
-                        actual_distance, direction = define_dist_and_dir_to_search(
-                            search_lat, search_lon, user_lat, user_lon
-                        )
-                        actual_distance = int(actual_distance)
-                        if actual_distance <= user_line.radius:
-                            temp_user_list.append(user_line)
-                            break
-
-            # CASE 3.3. No coordinates available
-            else:
-                temp_user_list = users_list_outcome
-
-            logging.info(f'User List crop due to radius: {len(users_list_outcome)} --> {len(temp_user_list)}')
-
-        except Exception as e:
-            logging.info(f'TEMP - exception radius: {repr(e)}')
-            logging.exception(e)
-        return temp_user_list
-
-    def _filter_users_with_prepared_messages(
-        self, record: LineInChangeLog, users_list_outcome: list[User]
-    ) -> list[User]:
-        # 4. DOUBLING. crop the list of users, excluding Users who were already notified on this change_log_id
-        # TODO do we still need it?
-        users_with_prepared_messages = self.get_from_sql_list_of_users_with_prepared_message(record.change_log_id)
-        temp_user_list = [user for user in users_list_outcome if user.user_id not in users_with_prepared_messages]
-        logging.info(f'User List crop due to doubling: {len(users_list_outcome)} --> {len(temp_user_list)}')
-        return temp_user_list
-
-    def _filter_users_not_following_this_search(
-        self, record: LineInChangeLog, users_list_outcome: list[User]
-    ) -> list[User]:
-        # 5. FOLLOW SEARCH. crop the list of users, excluding Users who is not following this search
-        logging.info(f'Crop user list step 5: forum_search_num=={record.forum_search_num}')
-        temp_user_list: list[User] = []
-        try:
-            sql_text_ = sqlalchemy.text("""
-                SELECT u.user_id FROM users u
-                LEFT JOIN user_pref_search_filtering upsf ON upsf.user_id=u.user_id and 'whitelist' = ANY(upsf.filter_name)
-                WHERE upsf.filter_name is not null AND NOT
-                (
-                    (	exists(select 1 from user_pref_search_whitelist upswls
-                            JOIN searches s ON search_forum_num=upswls.search_id 
-                            WHERE upswls.user_id=u.user_id and upswls.search_id != :a and upswls.search_following_mode=:b
-                            and s.status != 'СТОП')
-                        AND
-                        not exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:b)
-                    ) 
-                    OR
-                    exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:c)
-                )
-                OR upsf.filter_name is null
-                ;
-            """)
-            rows = self.conn.execute(sql_text_, a=record.forum_search_num, b='👀 ', c='❌ ').fetchall()
-            logging.info(f'Crop user list step 5: len(rows)=={len(rows)}')
-
-            following_users_ids = [row[0] for row in rows]
-            temp_user_list = [user for user in users_list_outcome if user.user_id in following_users_ids]
-
-            logging.info(
-                f'Crop user list step 5: User List crop due to whitelisting: {len(users_list_outcome)} --> {len(temp_user_list)}'
-            )
-        except Exception as ee:
-            logging.info('exception happened')
-            logging.exception(ee)
-        return temp_user_list
 
     def generate_notification_for_user(
         self,
@@ -309,7 +121,6 @@ class NotificationComposer:
 
         topic_type_id = new_record.topic_type_id
         region_to_show = new_record.region if user.user_in_multi_folders else None
-        user_message = ''
 
         this_record_was_processed_already = self.check_if_record_was_already_processed(change_log_id)
 
@@ -531,7 +342,6 @@ class NotificationComposer:
                 self.conn.execute(sql_text, a=new_record.change_log_id)
                 logging.info(f'The New Record {new_record.change_log_id} was marked as IGNORED in PSQL')
 
-
         except Exception as e:
             # FIXME – should be a smarter way to re-process the record instead of just marking everything as processed
             # For Safety's Sake – Update Change_log SQL table, setting 'y' everywhere
@@ -583,8 +393,207 @@ class NotificationComposer:
             notify_admin('ERROR: Not able to mark Comments as Processed!')
 
 
+class UserListFilter:
+    def __init__(self, conn: Connection, new_record: LineInChangeLog, users: list[User]):
+        self.conn = conn
+        self.new_record = new_record
+        self.users = users
+
+    def apply(self) -> list[User]:
+        users_list_outcome = self.users
+
+        users_list_outcome = self._filter_inforg_double_notification_for_users(self.new_record, users_list_outcome)
+
+        users_list_outcome = self._filter_users_by_age_settings(self.new_record, users_list_outcome)
+
+        users_list_outcome = self._filter_users_by_search_radius(self.new_record, users_list_outcome)
+
+        users_list_outcome = self._filter_users_with_prepared_messages(self.new_record, users_list_outcome)
+
+        users_list_outcome = self._filter_users_not_following_this_search(self.new_record, users_list_outcome)
+        return users_list_outcome
+
+    def _filter_inforg_double_notification_for_users(
+        self, record: LineInChangeLog, users_list_outcome: list[User]
+    ) -> list[User]:
+        # 1. INFORG 2X notifications. crop the list of users, excluding Users who receives all types of notifications
+        # (otherwise it will be doubling for them)
+        temp_user_list: list[User] = []
+        if record.change_type != ChangeType.topic_inforg_comment_new:
+            logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(users_list_outcome)}')
+        else:
+            for user_line in users_list_outcome:
+                # if this record is about inforg_comments and user already subscribed to all comments
+                check_passed = not user_line.all_notifs
+                logging.info(
+                    f'Inforg 2x CHECK for {user_line.user_id} is {"OK" if check_passed else "FAIL"}, record {record.change_type}, '
+                    f'user {user_line.user_id} {user_line.all_notifs}. '
+                    f'record {record.forum_search_num}'
+                )
+                if check_passed:
+                    temp_user_list.append(user_line)
+            logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(temp_user_list)}')
+        return temp_user_list
+
+    def _filter_users_by_age_settings(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
+        # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
+        if not (record.age_min or record.age_max):
+            logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
+            return users_list_outcome
+
+        temp_user_list: list[User] = []
+        search_age_range = (record.age_min, record.age_max)
+
+        for user_line in users_list_outcome:
+            age_requirements_met = check_if_age_requirements_met(search_age_range, user_line.age_periods)
+            logging.info(
+                f'AGE CHECK for {user_line.user_id} is {"OK" if age_requirements_met else "FAIL"}, record {search_age_range}, '
+                f'user {user_line.age_periods}. record {record.forum_search_num}'
+            )
+            if age_requirements_met:
+                temp_user_list.append(user_line)
+
+        logging.info(f'User List crop due to ages: {len(users_list_outcome)} --> {len(temp_user_list)}')
+        return temp_user_list
+
+    def _filter_users_by_search_radius(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
+        # 3. RADIUS. crop the list of users, excluding Users who does want to receive notifications within the radius
+        temp_user_list = []
+        try:
+            search_lat = record.search_latitude
+            search_lon = record.search_longitude
+            list_of_city_coords = None
+            if record.city_locations and record.city_locations != 'None':
+                non_geolocated = [x for x in eval(record.city_locations) if isinstance(x, str)]
+                list_of_city_coords = eval(record.city_locations) if not non_geolocated else None
+
+            # CASE 3.1. When exact coordinates of Search Headquarters are indicated
+            if search_lat and search_lon:
+                for user_line in users_list_outcome:
+                    if not (user_line.radius and user_line.user_latitude and user_line.user_longitude):
+                        temp_user_list.append(user_line)
+                        continue
+                    user_lat = user_line.user_latitude
+                    user_lon = user_line.user_longitude
+                    actual_distance, direction = define_dist_and_dir_to_search(
+                        search_lat, search_lon, user_lat, user_lon
+                    )
+                    actual_distance = int(actual_distance)
+                    if actual_distance <= user_line.radius:
+                        temp_user_list.append(user_line)
+
+            # CASE 3.2. When exact coordinates of a Place are geolocated
+            elif list_of_city_coords:
+                for user_line in users_list_outcome:
+                    if not (user_line.radius and user_line.user_latitude and user_line.user_longitude):
+                        temp_user_list.append(user_line)
+                        continue
+                    user_lat = user_line.user_latitude
+                    user_lon = user_line.user_longitude
+
+                    for city_coords in list_of_city_coords:
+                        search_lat, search_lon = city_coords
+                        if not search_lat or not search_lon:
+                            continue
+                        actual_distance, direction = define_dist_and_dir_to_search(
+                            search_lat, search_lon, user_lat, user_lon
+                        )
+                        actual_distance = int(actual_distance)
+                        if actual_distance <= user_line.radius:
+                            temp_user_list.append(user_line)
+                            break
+
+            # CASE 3.3. No coordinates available
+            else:
+                temp_user_list = users_list_outcome
+
+            logging.info(f'User List crop due to radius: {len(users_list_outcome)} --> {len(temp_user_list)}')
+
+        except Exception as e:
+            logging.info(f'TEMP - exception radius: {repr(e)}')
+            logging.exception(e)
+        return temp_user_list
+
+    def _filter_users_with_prepared_messages(
+        self, record: LineInChangeLog, users_list_outcome: list[User]
+    ) -> list[User]:
+        # 4. DOUBLING. crop the list of users, excluding Users who were already notified on this change_log_id
+        # TODO do we still need it?
+        users_with_prepared_messages = self._get_from_sql_list_of_users_with_prepared_message(record.change_log_id)
+        temp_user_list = [user for user in users_list_outcome if user.user_id not in users_with_prepared_messages]
+        logging.info(f'User List crop due to doubling: {len(users_list_outcome)} --> {len(temp_user_list)}')
+        return temp_user_list
+
+    def _filter_users_not_following_this_search(
+        self, record: LineInChangeLog, users_list_outcome: list[User]
+    ) -> list[User]:
+        # 5. FOLLOW SEARCH. crop the list of users, excluding Users who is not following this search
+        logging.info(f'Crop user list step 5: forum_search_num=={record.forum_search_num}')
+        temp_user_list: list[User] = []
+        try:
+            sql_text_ = sqlalchemy.text("""
+                SELECT u.user_id FROM users u
+                LEFT JOIN user_pref_search_filtering upsf ON upsf.user_id=u.user_id and 'whitelist' = ANY(upsf.filter_name)
+                WHERE upsf.filter_name is not null AND NOT
+                (
+                    (	exists(select 1 from user_pref_search_whitelist upswls
+                            JOIN searches s ON search_forum_num=upswls.search_id 
+                            WHERE upswls.user_id=u.user_id and upswls.search_id != :a and upswls.search_following_mode=:b
+                            and s.status != 'СТОП')
+                        AND
+                        not exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:b)
+                    ) 
+                    OR
+                    exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:c)
+                )
+                OR upsf.filter_name is null
+                ;
+            """)
+            rows = self.conn.execute(sql_text_, a=record.forum_search_num, b='👀 ', c='❌ ').fetchall()
+            logging.info(f'Crop user list step 5: len(rows)=={len(rows)}')
+
+            following_users_ids = [row[0] for row in rows]
+            temp_user_list = [user for user in users_list_outcome if user.user_id in following_users_ids]
+
+            logging.info(
+                f'Crop user list step 5: User List crop due to whitelisting: {len(users_list_outcome)} --> {len(temp_user_list)}'
+            )
+        except Exception as ee:
+            logging.info('exception happened')
+            logging.exception(ee)
+        return temp_user_list
+
+    def _get_from_sql_list_of_users_with_prepared_message(self, change_log_id: int) -> set[int]:
+        """check what is the list of users for whom we already composed messages for the given change_log record"""
+
+        sql_text_ = sqlalchemy.text("""
+            SELECT
+                user_id
+            FROM
+                notif_by_user
+            WHERE
+                created IS NOT NULL AND
+                change_log_id=:a
+
+            /*action='get_from_sql_list_of_users_with_already_composed_messages 2.0'*/
+            ;
+            """)
+
+        raw_data_ = self.conn.execute(sql_text_, a=change_log_id).fetchall()
+        # TODO: to delete
+        logging.info('list of user with composed messages:')
+        logging.info(raw_data_)
+
+        users_who_were_composed = [line[0] for line in raw_data_]
+
+        logging.info('users_who_should_not_be_informed:')
+        logging.info(users_who_were_composed)
+        logging.info(f'in total {len(users_who_were_composed)}')
+        return set(users_who_were_composed)
+
+
 class MessageComposer:
-    def __init__(self, new_record: LineInChangeLog, user: User, region_to_show: str|None):
+    def __init__(self, new_record: LineInChangeLog, user: User, region_to_show: str | None):
         self.new_record = new_record
         self.user = user
         self.region_to_show = region_to_show

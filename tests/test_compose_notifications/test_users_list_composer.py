@@ -4,7 +4,7 @@ from sqlalchemy.engine import Connection
 from compose_notifications._utils.notif_common import ChangeType, TopicType
 from compose_notifications._utils.users_list_composer import UsersListComposer
 from tests.factories import db_factories, db_models
-from tests.test_compose_notifications.test_change_log import LineInChangeLogFactory
+from tests.test_compose_notifications.factories import LineInChangeLogFactory
 
 
 def create_user_with_preferences(

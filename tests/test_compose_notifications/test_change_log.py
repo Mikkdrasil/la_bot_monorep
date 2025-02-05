@@ -5,18 +5,14 @@ import pytest
 
 # from tests.factories.db_models import ChangeLog, User
 from faker import Faker
-from polyfactory.factories import DataclassFactory
 from sqlalchemy.engine import Connection
 
-import compose_notifications._utils.log_record_composer
-import compose_notifications._utils.notif_common
-import compose_notifications._utils.users_list_composer
-from _dependencies.commons import sqlalchemy_get_pool
 from compose_notifications import main
 from compose_notifications._utils.notif_common import ChangeType, TopicType
 from compose_notifications.main import LineInChangeLog
 from tests.common import get_event_with_data
 from tests.factories import db_factories, db_models
+from tests.test_compose_notifications.factories import LineInChangeLogFactory
 
 faker = Faker('ru_RU')
 
@@ -25,15 +21,6 @@ class NotSentChangeLogFactory(db_factories.ChangeLogFactory):
     notification_sent = None
     change_type = 0
     changed_field = 'new_search'
-
-
-class LineInChangeLogFactory(DataclassFactory[LineInChangeLog]):
-    topic_type_id = TopicType.search_regular
-    forum_search_num = 1
-    start_time = datetime.now()
-    activities = [1, 2]
-    managers = '["manager1","manager2"]'
-    clickable_name = 'foo'
 
 
 @pytest.fixture
@@ -160,17 +147,3 @@ class TestChangeLogExtractor:
         assert record.comments[0].text == comment.comment_text
         assert comment.comment_text in record.message[0]
         # TODO inforg comment
-
-
-"""
-Исходные данные можно поделить на такие части:
-- общие: dict_notif_type и т.д. Это можно создавать в какой-то стартовой фикстуре и предполагать, что они неизменны.
-- то, что связано с форумом: change_log, search comments и т.д.
-- то, что связано с человеком: user, user_preferences и т.д. Здесь будут варьироваться настройки пользователя. Но они пригодятся при определении списка получателей.
-
-иерархия такая:
-- search
-- comments
-- change_log
-
-"""

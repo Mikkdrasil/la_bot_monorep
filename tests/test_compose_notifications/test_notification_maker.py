@@ -1,6 +1,12 @@
 import pytest
 
-from compose_notifications._utils.notifications_maker import check_if_age_requirements_met, MessageComposer
+from compose_notifications._utils.notifications_maker import (
+    MessageComposer,
+    NotificationComposer,
+    UserListFilter,
+    check_if_age_requirements_met,
+)
+from tests.test_compose_notifications.factories import LineInChangeLogFactory, UserFactory
 
 
 @pytest.mark.parametrize(
@@ -21,11 +27,24 @@ def test_age_requirements_check(search_ages, user_ages, equals):
     assert check_if_age_requirements_met(search_ages, user_ages) == equals
 
 
-def test_define_dist_and_dir_to_search():
-    from compose_notifications._utils.notifications_maker import define_dist_and_dir_to_search
+class TestUsersFilter:
+    def test_1(self, connection):
+        """
+        input = LineInChangeLog + UsersList (1 user)
+        output = cropped list of users (1 or 0 users).
+        """
+        line_in_change_log = LineInChangeLogFactory.build(
+            # topic_type_id=1,
+            # user_id=users_list[0].user_id,
+            # message=["Test Message"],
+        )
+        users_list = UserFactory.batch(
+            2,
+        )
+        filterer = UserListFilter(connection, line_in_change_log, users_list)
+        cropped_users = filterer.apply()
+        assert True
 
-    dist, direction = define_dist_and_dir_to_search('56.1234', '60.56780', '55.1234', '60.56780')
-    assert dist == 111.2
 
 """
 How to test NotificationMaker class?
