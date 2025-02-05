@@ -212,6 +212,7 @@ class CommonMessageComposer:
                 code_pos = comment_text.find('<code>')
                 text_before_code_pos = comment_text[:code_pos]
                 text_from_code_pos = comment_text[code_pos:]
+                # TODO fix test here. If <code> not in comment_text, we should return comment.text as is
 
                 msg += (
                     f' &#8226; <a href="{url_prefix}{comment.author_link}">{comment.author_nickname}</a>: '
