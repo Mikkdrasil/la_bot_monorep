@@ -23,7 +23,7 @@ class LineInChangeLog:
     title: Any = None
     age: Any = None
     age_wording: Any = None
-    forum_folder: Any = None
+    forum_folder: int = None
     activities: list[int] = field(default_factory=list)
     comments: Any = None
     comments_inforg: Any = None

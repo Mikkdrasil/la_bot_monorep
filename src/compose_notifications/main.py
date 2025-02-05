@@ -590,7 +590,7 @@ def record_notification_statistics(conn: sqlalchemy.engine.Connection) -> None:
 
 def iterate_over_all_users(
     conn: sqlalchemy.engine.Connection, admins_list, new_record: LineInChangeLog, list_of_users: list[User], function_id
-) -> LineInChangeLog:
+):
     """initiates a full cycle for all messages composition for all the users"""
     global stat_list_of_recipients
 
@@ -603,7 +603,7 @@ def iterate_over_all_users(
         if new_record.ignore == 'y':
             new_record.processed = 'yes'
             logging.info('Iterations over all Users and Updates are done (record Ignored)')
-            return new_record
+            return
 
         topic_id = new_record.forum_search_num
         change_type = new_record.change_type
@@ -638,8 +638,6 @@ def iterate_over_all_users(
         logging.info('Not able to Iterate over all Users and Updates: ')
         logging.exception(e1)
 
-    return new_record
-
 
 def iterate_users_generate_one_notification(
     conn: sqlalchemy.engine.Connection,
@@ -673,7 +671,7 @@ def iterate_users_generate_one_notification(
             return
 
     # start composing individual messages (specific user on specific situation)
-    message = _compose_message(new_record, user, change_type, topic_type_id, region_to_show)
+    message = _compose_message(new_record, user, region_to_show)
     if not message:
         return
 
@@ -1034,7 +1032,7 @@ def process_new_record(analytics_start_of_func, function_id, conn, new_record: L
     logging.info(f'time: function match end-to-end – {duration_match} sec')
 
     # check the matrix: new update - user and initiate sending notifications
-    new_record = iterate_over_all_users(conn, admins_list, new_record, list_of_users, function_id)
+    iterate_over_all_users(conn, admins_list, new_record, list_of_users, function_id)
 
     analytics_iterations_finish = datetime.datetime.now()
     duration_iterations = round((analytics_iterations_finish - analytics_match_finish).total_seconds(), 2)
