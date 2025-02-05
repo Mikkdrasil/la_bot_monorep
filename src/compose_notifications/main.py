@@ -15,7 +15,7 @@ from _dependencies.misc import (
     process_pubsub_message_v2,
 )
 
-from ._utils.log_record_composer import LogRecordExtractor
+from ._utils.log_record_composer import LogRecordComposer
 from ._utils.notif_common import LineInChangeLog, User
 from ._utils.notifications_maker import NotificationMaker
 from ._utils.users_list_composer import UserListFilter, UsersListComposer
@@ -146,7 +146,7 @@ def main(event: dict, context: str) -> Any:  # noqa
     pool = sql_connect()
     with pool.connect() as conn:
         # compose New Records List: the delta from Change log
-        new_record = LogRecordExtractor(conn).get_line()
+        new_record = LogRecordComposer(conn).get_line()
 
         if new_record:
             list_of_users = UsersListComposer(conn).get_users_list_for_line_in_change_log(new_record)

@@ -86,7 +86,7 @@ class TestChangeLogExtractor:
         """
         get one record in change_log and assert that it is enriched with other fields
         """
-        record = main.LogRecordExtractor(conn=connection).get_line()
+        record = main.LogRecordComposer(conn=connection).get_line()
         assert record
 
     def test_get_change_log_record_by_id(
@@ -95,7 +95,7 @@ class TestChangeLogExtractor:
         change_log_db_record_status_change: db_models.ChangeLog,
         search_record: db_models.Search,
     ):
-        record = main.LogRecordExtractor(conn=connection, record_id=change_log_db_record_status_change.id).get_line()
+        record = main.LogRecordComposer(conn=connection, record_id=change_log_db_record_status_change.id).get_line()
         assert record.change_log_id == change_log_db_record_status_change.id
         assert record.changed_field == change_log_db_record_status_change.changed_field
         assert record.forum_search_num == change_log_db_record_status_change.search_forum_num
@@ -112,7 +112,7 @@ class TestChangeLogExtractor:
         managers_record = db_factories.SearchAttributeFactory.create_sync(
             search_forum_num=search_record.search_forum_num, attribute_name='managers'
         )
-        record = main.LogRecordExtractor(conn=connection, record_id=change_log_db_record_status_change.id).get_line()
+        record = main.LogRecordComposer(conn=connection, record_id=change_log_db_record_status_change.id).get_line()
         assert record.managers == managers_record.attribute_value
 
     def test_get_change_log_record_with_search_activity(
@@ -125,7 +125,7 @@ class TestChangeLogExtractor:
         search_activity_record = db_factories.SearchActivityFactory.create_sync(
             search_forum_num=search_record.search_forum_num, activity_type=dict_activity_record.activity_id
         )
-        record = main.LogRecordExtractor(conn=connection, record_id=change_log_db_record_status_change.id).get_line()
+        record = main.LogRecordComposer(conn=connection, record_id=change_log_db_record_status_change.id).get_line()
         assert record.activities == [dict_activity_record.activity_name]
 
     def test_get_change_log_record_with_search_activity_and_comments(
@@ -139,9 +139,7 @@ class TestChangeLogExtractor:
         search_activity_record = db_factories.SearchActivityFactory.create_sync(
             search_forum_num=search_record.search_forum_num, activity_type=dict_activity_record.activity_id
         )
-        record = main.LogRecordExtractor(
-            conn=connection, record_id=change_log_db_record_topic_comment_new.id
-        ).get_line()
+        record = main.LogRecordComposer(conn=connection, record_id=change_log_db_record_topic_comment_new.id).get_line()
         assert record.activities == [dict_activity_record.activity_name]
         assert len(record.comments) == 1
         assert record.comments[0].text == comment.comment_text

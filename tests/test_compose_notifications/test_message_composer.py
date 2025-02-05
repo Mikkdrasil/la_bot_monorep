@@ -1,14 +1,13 @@
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from datetime import datetime
 
 import pytest
-
-from tests.test_compose_notifications.factories import UserFactory
 from faker import Faker
 from polyfactory.factories import DataclassFactory
 
-from compose_notifications._utils.message_composers import CommonMessageComposer, PersonalMessageComposer
+from compose_notifications._utils.log_record_composer import make_clickable_name, make_emoji
+from compose_notifications._utils.message_composer import MessageComposer
 from compose_notifications._utils.notif_common import ChangeLogSavedValue, ChangeType, LineInChangeLog, TopicType, User
+from tests.test_compose_notifications.factories import UserFactory
 
 faker = Faker('ru_RU')
 
@@ -26,7 +25,7 @@ def test_topic_emoji():
         topic_type_id=TopicType.search_reverse,
     )
     assert not record.topic_emoji
-    CommonMessageComposer(record).compose()
+    make_emoji(record)
     assert record.topic_emoji
 
 
@@ -36,7 +35,7 @@ class TestCommonMessageComposerClickableName:
             topic_type_id=TopicType.search_reverse,
         )
         assert not record.clickable_name
-        CommonMessageComposer(record).compose()
+        make_clickable_name(record)
         assert record.display_name in record.clickable_name
 
     def test_clickable_name_topic_search_without_display_name(self):
@@ -45,7 +44,7 @@ class TestCommonMessageComposerClickableName:
             display_name='',
         )
         assert not record.clickable_name
-        CommonMessageComposer(record).compose()
+        make_clickable_name(record)
         assert record.name in record.clickable_name
 
     def test_clickable_name_topic_not_search(self):
@@ -53,7 +52,7 @@ class TestCommonMessageComposerClickableName:
             topic_type_id=TopicType.info,
         )
         assert not record.clickable_name
-        CommonMessageComposer(record).compose()
+        make_clickable_name(record)
         assert record.title in record.clickable_name
 
 
@@ -85,7 +84,7 @@ class TestMessageComposer:
             topic_type_id=TopicType.search_reverse,
             change_type=change_type,
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert not message
 
     def test_topic_new_search(self, user: User):
@@ -96,7 +95,7 @@ class TestMessageComposer:
             managers='["manager1","manager2 +79001234567"]',  # TODO check phone link in separate test
             activities=['some activity'],
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert message
         assert 'Новый поиск' in message
         assert 'some activity' in message
@@ -107,10 +106,8 @@ class TestMessageComposer:
             change_type=ChangeType.topic_new,
             start_time=datetime.now(),
             topic_type_id=TopicType.event,
-            managers='["manager1","manager2 +79001234567"]',  # TODO check phone link in separate test
-            activities=['some activity'],
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert message
         assert 'Новое мероприятие' in message
         assert record.clickable_name in message
@@ -120,7 +117,7 @@ class TestMessageComposer:
             change_type=ChangeType.topic_status_change,
             topic_type_id=TopicType.search_info_support,
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert 'изменение статуса по' in message
         assert record.clickable_name in message
 
@@ -129,7 +126,7 @@ class TestMessageComposer:
             change_type=ChangeType.topic_title_change,
             topic_type_id=TopicType.event,
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert 'обновление заголовка мероприятия по' in message
         assert record.clickable_name in message
 
@@ -137,7 +134,7 @@ class TestMessageComposer:
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_comment_new,
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert 'Новые комментарии по поиску' in message
         assert record.clickable_name in message
 
@@ -145,7 +142,7 @@ class TestMessageComposer:
         record = LineInChageFactory.build(
             change_type=ChangeType.topic_inforg_comment_new,
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert 'Сообщение от ' in message
         assert record.clickable_name in message
 
@@ -156,7 +153,7 @@ class TestMessageComposer:
             topic_type_id=TopicType.search_regular,
             new_value=new_value,
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
 
         assert '🔀Изменения в первом посте по ' in message
         assert '\n\n➖Удалено:\n<s>Иван (Иванов)\n</s>' in message
@@ -169,7 +166,7 @@ class TestMessageComposer:
             topic_type_id=TopicType.search_regular,
             new_value=new_value,
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert '➕Добавлено:\nИван (Иванов)\n' in message
 
     def test_topic_first_post_change_3(self, user: User):
@@ -182,7 +179,7 @@ class TestMessageComposer:
             topic_type_id=TopicType.search_regular,
             new_value=new_value,
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert 'Удалена информация:<s>Координаты пропажи: 53.534658, 49.324723</s>' in message
 
     def test_topic_first_post_change_4(self, user: User):
@@ -202,7 +199,7 @@ class TestMessageComposer:
             search_latitude='56.1234',
             search_longitude='60.1234',
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert (
             'Удалено:<s>Ожидается выезд!</s>➕Добавлено:Штаб начнёт работать с 14:00 по адресу:Стоянка на заправке Газпромнефть, Маньковский разворот, Сергиево-Посадский г.о.56.376108, 38.108829'
             in message
@@ -217,7 +214,7 @@ class TestMessageComposer:
             search_latitude='56.1234',
             search_longitude='60.1234',
         )
-        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        message = MessageComposer(record).compose_message_for_user(user)
         assert (
             '➕Добавлено:\nНовые координаты <code>57.1234 61.12345</code>\n\n\nКоординаты сместились на ~126 км &#8601;&#xFE0E;'
             in message

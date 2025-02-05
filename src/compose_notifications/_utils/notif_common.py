@@ -77,16 +77,6 @@ class Message:
 
 
 @dataclass
-class MessageNewTopic(Message):
-    city_coords: Any = None
-    hq_coords: Any = None
-    activities: str = ''
-    managers: Any = None
-    hint_on_coords: Any = None
-    hint_on_something: Any = None  # FIXME
-
-
-@dataclass
 class Comment:
     url: str = ''
     text: str = ''
@@ -110,7 +100,7 @@ class LineInChangeLog:
     name: str = ''
     link: str = ''
     status: str = ''
-    new_status: str = ""
+    new_status: str = ''
     n_of_replies: int = 0  # not used
     title: str = ''
     age: int = 0
@@ -119,7 +109,6 @@ class LineInChangeLog:
     activities: list[str] = field(default_factory=list)
     comments: list[Comment] = field(default_factory=list)
     comments_inforg: list[Comment] = field(default_factory=list)
-    message_object: Any | Message | MessageNewTopic = None  # FIXME - maybe should replace "message"
     processed: bool = False
     managers: str = '[]'
     start_time: datetime.datetime = field(default_factory=datetime.datetime.now)

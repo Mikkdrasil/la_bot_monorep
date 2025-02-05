@@ -9,15 +9,10 @@ from sqlalchemy.engine.base import Connection
 
 from _dependencies.misc import age_writer, notify_admin
 
-from .notif_common import (
-    WINDOW_FOR_NOTIFICATIONS_DAYS,
-    ChangeType,
-    Comment,
-    LineInChangeLog,
-)
+from .notif_common import SEARCH_TOPIC_TYPES, WINDOW_FOR_NOTIFICATIONS_DAYS, ChangeType, Comment, LineInChangeLog
 
 
-class LogRecordExtractor:
+class LogRecordComposer:
     def __init__(self, conn: Connection, record_id: int | None = None) -> None:
         self.conn = conn
         self.record_id = record_id
@@ -87,6 +82,9 @@ class LogRecordExtractor:
 
         self.enrich_new_record_with_comments(new_record)
         self.enrich_new_record_with_inforg_comments(new_record)
+
+        make_clickable_name(new_record)
+        make_emoji(new_record)
 
     def delete_ended_search_following(self, new_record: LineInChangeLog) -> None:  # issue425
         ### Delete from user_pref_search_whitelist if the search goes to one of ending statuses
@@ -353,3 +351,36 @@ class LogRecordExtractor:
             temp_list_of_comments.append(comment)
 
         return temp_list_of_comments
+
+
+def make_emoji(line: LineInChangeLog) -> None:
+    """add specific emoji based on topic (search) type"""
+
+    topic_type_id = line.topic_type_id
+    topic_type_dict = {
+        0: '',  # search regular
+        1: '🏠',  # search reverse
+        2: '🚓',  # search patrol
+        3: '🎓',  # search training
+        4: 'ℹ️',  # search info support
+        5: '🚨',  # search resonance
+        10: '📝',  # event
+    }
+    line.topic_emoji = topic_type_dict.get(topic_type_id, '')
+
+
+def make_clickable_name(line: LineInChangeLog) -> None:
+    """add clickable name to the record"""
+
+    link_text = ''
+    if line.topic_type_id in SEARCH_TOPIC_TYPES:  # if it's search
+        if line.display_name:
+            link_text = line.display_name
+        else:
+            name = line.name if line.name else 'БВП'
+            age_info = f'{line.age_wording}' if (name[0].isupper() and line.age) else ''
+            link_text = f'{name} {age_info}'.strip()
+    else:  # if it's event or something else
+        link_text = line.title
+
+    line.clickable_name = f'<a href="{line.link}">{link_text}</a>'

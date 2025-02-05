@@ -8,9 +8,8 @@ from sqlalchemy.engine.base import Connection
 
 from _dependencies.commons import Topics, get_app_config, publish_to_pubsub
 from _dependencies.misc import notify_admin
-from compose_notifications._utils.message_composers import PersonalMessageComposer
 
-from .message_composers import CommonMessageComposer
+from .message_composer import MessageComposer
 from .notif_common import (
     SEARCH_TOPIC_TYPES,
     ChangeType,
@@ -35,7 +34,6 @@ class NotificationMaker:
 
     def generate_notifications_for_users(self, function_id: int):
         """initiates a full cycle for all messages composition for all the users"""
-        CommonMessageComposer(self.new_record).compose()
 
         new_record = self.new_record
 
@@ -119,7 +117,7 @@ class NotificationMaker:
                 return
 
         # start composing individual messages (specific user on specific situation)
-        user_message = PersonalMessageComposer(self.new_record).compose_message_for_user(user)
+        user_message = MessageComposer(self.new_record).compose_message_for_user(user)
         if not user_message:
             return
 
