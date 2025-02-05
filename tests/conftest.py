@@ -24,7 +24,7 @@ def collect_types_fixture():
     collect_types.dump_stats('type_info.json')
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope='session')
 def patch_app_config(collect_types_fixture):
     """Connect to local DB"""
 

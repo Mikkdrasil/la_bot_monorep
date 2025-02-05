@@ -17,8 +17,8 @@ from _dependencies.misc import (
 
 from ._utils.log_record_composer import LogRecordExtractor
 from ._utils.notif_common import LineInChangeLog, User
-from ._utils.notifications_maker import NotificationComposer
-from ._utils.users_list_composer import UsersListComposer
+from ._utils.notifications_maker import NotificationMaker
+from ._utils.users_list_composer import UserListFilter, UsersListComposer
 
 INTERVAL_TO_CHECK_PARALLEL_FUNCTION_SECONDS = 130
 FUNC_NAME = 'compose_notifications'
@@ -94,7 +94,7 @@ def create_user_notifications_from_change_log_record(
 
     # check the matrix: new update - user and initiate sending notifications
 
-    composer = NotificationComposer(conn)
+    composer = NotificationMaker(conn)
     composer.generate_notifications_for_users(new_record, list_of_users, function_id)
 
     analytics_iterations_finish = datetime.datetime.now()
@@ -150,6 +150,7 @@ def main(event: dict, context: str) -> Any:  # noqa
 
         if new_record:
             list_of_users = UsersListComposer(conn).get_users_list_for_line_in_change_log(new_record)
+            list_of_users = UserListFilter(conn, new_record, list_of_users).apply()
 
             analytics_iterations_finish = create_user_notifications_from_change_log_record(
                 analytics_start_of_func,

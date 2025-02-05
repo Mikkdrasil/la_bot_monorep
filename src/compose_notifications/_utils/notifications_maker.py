@@ -23,7 +23,7 @@ CLEANER_RE = re.compile('<.*?>')
 FIB_LIST = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987]
 
 
-class NotificationComposer:
+class NotificationMaker:
     def __init__(self, conn: Connection) -> None:
         self.conn = conn
         self.stat_list_of_recipients: list[int] = []  # list of users who received notification on new search
@@ -42,14 +42,7 @@ class NotificationComposer:
                 logging.info('Iterations over all Users and Updates are done (record Ignored)')
                 return
 
-            topic_id = new_record.forum_search_num
-            change_type = new_record.change_type
-            change_log_id = new_record.change_log_id
-
-            mailing_id = self.create_new_mailing_id(change_log_id, topic_id, change_type)
-
-            # TODO move to Users composer
-            list_of_users = self.crop_user_list(list_of_users, new_record)
+            mailing_id = self.create_new_mailing_id(new_record)
 
             message_for_pubsub = {'triggered_by_func_id': function_id, 'text': 'initiate notifs send out'}
             publish_to_pubsub(Topics.topic_to_send_notifications, message_for_pubsub)
@@ -70,15 +63,20 @@ class NotificationComposer:
             logging.info('Not able to Iterate over all Users and Updates: ')
             logging.exception(e1)
 
-    def create_new_mailing_id(self, change_log_id: int, topic_id: int, change_type) -> int:
+    def create_new_mailing_id(self, new_record: LineInChangeLog) -> int:
         # record into SQL table notif_mailings
+
         sql_text = sqlalchemy.text("""
             INSERT INTO notif_mailings (topic_id, source_script, mailing_type, change_log_id)
             VALUES (:a, :b, :c, :d)
             RETURNING mailing_id;
                         """)
         raw_data = self.conn.execute(
-            sql_text, a=topic_id, b='notifications_script', c=change_type, d=change_log_id
+            sql_text,
+            a=new_record.forum_search_num,
+            b='notifications_script',
+            c=new_record.change_type,
+            d=new_record.change_log_id,
         ).fetchone()
 
         mail_id = raw_data[0]
@@ -98,18 +96,6 @@ class NotificationComposer:
             logging.info('[comp_notif]: 2 MAILINGS for 1 CHANGE LOG RECORD identified')
         # TODO: DEBUG
         return record_was_processed_already
-
-    def crop_user_list(
-        self,
-        users_list_incoming: list[User],
-        record: LineInChangeLog,
-    ):
-        """crop user_list to only affected users
-        TODO can we move it to UsersListComposer?"""
-        filterer = UserListFilter(self.conn, record, users_list_incoming)
-        users_list_outcome = filterer.apply()
-
-        return users_list_outcome
 
     def generate_notification_for_user(
         self,
@@ -151,7 +137,6 @@ class NotificationComposer:
 
         # TODO: make text more compact within 50 symbols
         message_without_html = re.sub(CLEANER_RE, '', user_message)
-
         message_params = {'parse_mode': 'HTML', 'disable_web_page_preview': 'True'}
 
         # for the new searches we add a link to web_app map
@@ -175,10 +160,43 @@ class NotificationComposer:
         if change_type == ChangeType.topic_new and topic_type_id in SEARCH_TOPIC_TYPES:
             # for user tips in "new search" notifs – to increase sent messages counter
             self.stat_list_of_recipients.append(user.user_id)
-            if new_record.search_latitude and new_record.search_longitude:
-                message_params = {'latitude': new_record.search_latitude, 'longitude': new_record.search_longitude}
+            self._send_coordinates_for_new_search(new_record, mailing_id, user, change_log_id, msg_group_id)
+        elif change_type == ChangeType.topic_first_post_change:
+            self._send_coordinates_for_first_post_change(mailing_id, user, change_log_id, user_message, msg_group_id)
+
+    def _send_coordinates_for_new_search(
+        self, new_record: LineInChangeLog, mailing_id: int, user: User, change_log_id: int, msg_group_id: int | None
+    ) -> None:
+        if new_record.search_latitude and new_record.search_longitude:
+            message_params = {'latitude': new_record.search_latitude, 'longitude': new_record.search_longitude}
 
             # record into SQL table notif_by_user (not text, but coords only)
+        self.save_to_sql_notif_by_user(
+            mailing_id,
+            user.user_id,
+            None,
+            None,
+            'coords',
+            message_params,
+            msg_group_id,
+            change_log_id,
+        )
+
+    def _send_coordinates_for_first_post_change(
+        self, mailing_id: int, user: User, change_log_id: int, user_message: str, msg_group_id: int | None
+    ) -> None:
+        try:
+            list_of_coords = re.findall(r'<code>', user_message)
+            if not list_of_coords or len(list_of_coords) != 1:
+                return
+                # that would mean that there's only 1 set of new coordinates and hence we can
+                # send the dedicated sendLocation message
+            both_coordinates = re.search(r'(?<=<code>).{5,100}(?=</code>)', user_message).group()
+            if not both_coordinates:
+                return
+            new_lat = re.search(r'^[\d.]{2,12}(?=\D)', both_coordinates).group()
+            new_lon = re.search(r'(?<=\D)[\d.]{2,12}$', both_coordinates).group()
+            message_params = {'latitude': new_lat, 'longitude': new_lon}
             self.save_to_sql_notif_by_user(
                 mailing_id,
                 user.user_id,
@@ -189,30 +207,8 @@ class NotificationComposer:
                 msg_group_id,
                 change_log_id,
             )
-        if change_type == ChangeType.topic_first_post_change:
-            try:
-                list_of_coords = re.findall(r'<code>', user_message)
-                if list_of_coords and len(list_of_coords) == 1:
-                    # that would mean that there's only 1 set of new coordinates and hence we can
-                    # send the dedicated sendLocation message
-                    both_coordinates = re.search(r'(?<=<code>).{5,100}(?=</code>)', user_message).group()
-                    if both_coordinates:
-                        new_lat = re.search(r'^[\d.]{2,12}(?=\D)', both_coordinates).group()
-                        new_lon = re.search(r'(?<=\D)[\d.]{2,12}$', both_coordinates).group()
-                        message_params = {'latitude': new_lat, 'longitude': new_lon}
-                        self.save_to_sql_notif_by_user(
-                            mailing_id,
-                            user.user_id,
-                            None,
-                            None,
-                            'coords',
-                            message_params,
-                            msg_group_id,
-                            change_log_id,
-                        )
-            except Exception as ee:
-                logging.info('exception happened')
-                logging.exception(ee)
+        except Exception as ee:
+            logging.exception("Can't calculate/send coordinates")
 
     def get_the_new_group_id(self) -> int:
         """define the max message_group_id in notif_by_user and add +1"""

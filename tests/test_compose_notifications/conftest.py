@@ -5,6 +5,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 from _dependencies.commons import sqlalchemy_get_pool
+from compose_notifications._utils.notif_common import ChangeType, TopicType
 from tests.factories import db_factories, db_models
 
 
@@ -12,6 +13,7 @@ from tests.factories import db_factories, db_models
 def local_patches():
     with (
         patch('compose_notifications.main.publish_to_pubsub'),
+        patch('compose_notifications._utils.notifications_maker.publish_to_pubsub'),
     ):
         yield
 
@@ -23,10 +25,16 @@ def connection() -> Connection:
         yield conn
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def default_dict_notif_type() -> db_models.DictNotifType:
+    # TODO generate all types
     with db_factories.get_session() as session:
-        return get_or_create(session, db_models.DictNotifType, type_id=1, type_name='new_search')
+        return get_or_create(
+            session,
+            db_models.DictNotifType,
+            type_id=ChangeType.topic_status_change,
+            type_name='new_search',
+        )
 
 
 def get_or_create(session: Session, model, **kwargs):

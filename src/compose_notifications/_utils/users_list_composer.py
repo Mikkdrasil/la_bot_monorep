@@ -149,6 +149,18 @@ class UsersListComposer:
 
         return list_of_users
 
+    def crop_user_list(
+        self,
+        users_list_incoming: list[User],
+        record: LineInChangeLog,
+    ):
+        """crop user_list to only affected users
+        TODO can we move it to UsersListComposer?"""
+        filterer = UserListFilter(self.conn, record, users_list_incoming)
+        users_list_outcome = filterer.apply()
+
+        return users_list_outcome
+
 
 def check_if_age_requirements_met(search_ages: tuple[int | None, int | None], user_ages: list[tuple[int, int]]) -> bool:
     """check if user wants to receive notifications for such age"""
