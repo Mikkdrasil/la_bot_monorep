@@ -397,30 +397,26 @@ class UserListFilter:
     def __init__(self, conn: Connection, new_record: LineInChangeLog, users: list[User]):
         self.conn = conn
         self.new_record = new_record
-        self.users = users
+        self.users = users.copy()
 
     def apply(self) -> list[User]:
-        users_list_outcome = self.users
+        self.users = self._filter_inforg_double_notification_for_users()
+        self.users = self._filter_users_by_age_settings()
+        self.users = self._filter_users_by_search_radius()
+        self.users = self._filter_users_with_prepared_messages()
+        self.users = self._filter_users_not_following_this_search()
 
-        users_list_outcome = self._filter_inforg_double_notification_for_users(self.new_record, users_list_outcome)
+        return self.users
 
-        users_list_outcome = self._filter_users_by_age_settings(self.new_record, users_list_outcome)
-
-        users_list_outcome = self._filter_users_by_search_radius(self.new_record, users_list_outcome)
-
-        users_list_outcome = self._filter_users_with_prepared_messages(self.new_record, users_list_outcome)
-
-        users_list_outcome = self._filter_users_not_following_this_search(self.new_record, users_list_outcome)
-        return users_list_outcome
-
-    def _filter_inforg_double_notification_for_users(
-        self, record: LineInChangeLog, users_list_outcome: list[User]
-    ) -> list[User]:
+    def _filter_inforg_double_notification_for_users(self) -> list[User]:
         # 1. INFORG 2X notifications. crop the list of users, excluding Users who receives all types of notifications
         # (otherwise it will be doubling for them)
+        record = self.new_record
+        users_list_outcome = self.users
         temp_user_list: list[User] = []
         if record.change_type != ChangeType.topic_inforg_comment_new:
             logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(users_list_outcome)}')
+            return users_list_outcome
         else:
             for user_line in users_list_outcome:
                 # if this record is about inforg_comments and user already subscribed to all comments
@@ -435,8 +431,10 @@ class UserListFilter:
             logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(temp_user_list)}')
         return temp_user_list
 
-    def _filter_users_by_age_settings(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
+    def _filter_users_by_age_settings(self) -> list[User]:
         # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
+        users_list_outcome = self.users
+        record = self.new_record
         if not (record.age_min or record.age_max):
             logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
             return users_list_outcome
@@ -456,8 +454,10 @@ class UserListFilter:
         logging.info(f'User List crop due to ages: {len(users_list_outcome)} --> {len(temp_user_list)}')
         return temp_user_list
 
-    def _filter_users_by_search_radius(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
+    def _filter_users_by_search_radius(self) -> list[User]:
         # 3. RADIUS. crop the list of users, excluding Users who does want to receive notifications within the radius
+        record = self.new_record
+        users_list_outcome = self.users
         temp_user_list = []
         try:
             search_lat = record.search_latitude
@@ -514,20 +514,19 @@ class UserListFilter:
             logging.exception(e)
         return temp_user_list
 
-    def _filter_users_with_prepared_messages(
-        self, record: LineInChangeLog, users_list_outcome: list[User]
-    ) -> list[User]:
+    def _filter_users_with_prepared_messages(self) -> list[User]:
         # 4. DOUBLING. crop the list of users, excluding Users who were already notified on this change_log_id
         # TODO do we still need it?
-        users_with_prepared_messages = self._get_from_sql_list_of_users_with_prepared_message(record.change_log_id)
+        users_list_outcome = self.users
+        users_with_prepared_messages = self._get_from_sql_list_of_users_with_prepared_message()
         temp_user_list = [user for user in users_list_outcome if user.user_id not in users_with_prepared_messages]
         logging.info(f'User List crop due to doubling: {len(users_list_outcome)} --> {len(temp_user_list)}')
         return temp_user_list
 
-    def _filter_users_not_following_this_search(
-        self, record: LineInChangeLog, users_list_outcome: list[User]
-    ) -> list[User]:
+    def _filter_users_not_following_this_search(self) -> list[User]:
         # 5. FOLLOW SEARCH. crop the list of users, excluding Users who is not following this search
+        users_list_outcome = self.users
+        record = self.new_record
         logging.info(f'Crop user list step 5: forum_search_num=={record.forum_search_num}')
         temp_user_list: list[User] = []
         try:
@@ -563,7 +562,7 @@ class UserListFilter:
             logging.exception(ee)
         return temp_user_list
 
-    def _get_from_sql_list_of_users_with_prepared_message(self, change_log_id: int) -> set[int]:
+    def _get_from_sql_list_of_users_with_prepared_message(self) -> set[int]:
         """check what is the list of users for whom we already composed messages for the given change_log record"""
 
         sql_text_ = sqlalchemy.text("""
@@ -579,7 +578,7 @@ class UserListFilter:
             ;
             """)
 
-        raw_data_ = self.conn.execute(sql_text_, a=change_log_id).fetchall()
+        raw_data_ = self.conn.execute(sql_text_, a=self.new_record.change_log_id).fetchall()
         # TODO: to delete
         logging.info('list of user with composed messages:')
         logging.info(raw_data_)

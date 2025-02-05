@@ -1,5 +1,6 @@
 import pytest
 
+from compose_notifications._utils.notif_common import ChangeType, LineInChangeLog, User
 from compose_notifications._utils.notifications_maker import (
     MessageComposer,
     NotificationComposer,
@@ -28,29 +29,68 @@ def test_age_requirements_check(search_ages, user_ages, equals):
 
 
 class TestUsersFilter:
-    def test_1(self, connection):
-        """
-        input = LineInChangeLog + UsersList (1 user)
-        output = cropped list of users (1 or 0 users).
-        """
+    def test_filter_inforg_double_notification_for_users_1(self, connection):
+        line_in_change_log = LineInChangeLogFactory.build(change_type=ChangeType.all)
+        user = UserFactory.build()
+        filterer = UserListFilter(connection, line_in_change_log, [user])
+        cropped_users = filterer._filter_inforg_double_notification_for_users()
+        assert user in cropped_users
+
+    def test_filter_inforg_double_notification_for_users_2(self, connection):
+        line_in_change_log = LineInChangeLogFactory.build(change_type=ChangeType.topic_inforg_comment_new)
+        user = UserFactory.build(all_notifs=True)
+        filterer = UserListFilter(connection, line_in_change_log, [user])
+        cropped_users = filterer._filter_inforg_double_notification_for_users()
+        assert user not in cropped_users
+
+    def test_filter_inforg_double_notification_for_users_3(self, connection):
+        line_in_change_log = LineInChangeLogFactory.build(change_type=ChangeType.topic_inforg_comment_new)
+        user = UserFactory.build(all_notifs=False)
+        filterer = UserListFilter(connection, line_in_change_log, [user])
+        cropped_users = filterer._filter_inforg_double_notification_for_users()
+        assert user in cropped_users
+
+    def test_filter_users_by_age_settings_1(self, connection):
+        line_in_change_log = LineInChangeLogFactory.build(age_min=10, age_max=20)
+        user = UserFactory.build(age_periods=[(19, 20)])
+        filterer = UserListFilter(connection, line_in_change_log, [user])
+        cropped_users = filterer._filter_users_by_age_settings()
+        assert user in cropped_users
+
+    def test_filter_users_by_age_settings_2(self, connection):
+        line_in_change_log = LineInChangeLogFactory.build(age_min=10, age_max=20)
+        user = UserFactory.build(age_periods=[(21, 22)])
+        filterer = UserListFilter(connection, line_in_change_log, [user])
+        cropped_users = filterer._filter_users_by_age_settings()
+        assert user not in cropped_users
+
+    def test_filter_users_by_search_radius_1(self, connection):
         line_in_change_log = LineInChangeLogFactory.build(
-            # topic_type_id=1,
-            # user_id=users_list[0].user_id,
-            # message=["Test Message"],
+            city_locations='[[54.1234, 55.1234]]', search_latitude='', search_longitude=''
         )
-        users_list = UserFactory.batch(
-            2,
+        user = UserFactory.build(user_latitude='54.0000', user_longitude='55.0000', radius=100)
+        filterer = UserListFilter(connection, line_in_change_log, [user])
+        cropped_users = filterer._filter_users_by_search_radius()
+        assert user in cropped_users
+
+    def test_filter_users_by_search_radius_2(self, connection):
+        line_in_change_log = LineInChangeLogFactory.build(
+            city_locations='', search_latitude='54.1234', search_longitude='55.1234'
         )
-        filterer = UserListFilter(connection, line_in_change_log, users_list)
-        cropped_users = filterer.apply()
-        assert True
+        user = UserFactory.build(user_latitude='54.0000', user_longitude='55.0000', radius=100)
+        filterer = UserListFilter(connection, line_in_change_log, [user])
+        cropped_users = filterer._filter_users_by_search_radius()
+        assert user in cropped_users
+
+    def test_filter_users_by_search_radius_3(self, connection):
+        line_in_change_log = LineInChangeLogFactory.build(
+            city_locations='[[54.1234, 55.1234]]',
+        )
+        user = UserFactory.build(user_latitude='60.0000', user_longitude='60.0000', radius=1)
+        filterer = UserListFilter(connection, line_in_change_log, [user])
+        cropped_users = filterer._filter_users_by_search_radius()
+        assert user not in cropped_users
 
 
-"""
-How to test NotificationMaker class?
-
-maybe split to 2 parts:
-1. filtering users
-2. preparing notifications
-
-"""
+# _filter_users_with_prepared_messages
+# _filter_users_not_following_this_search
