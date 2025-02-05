@@ -164,14 +164,16 @@ class CommonMessageComposer:
             old_lat = COORD_FORMAT.format(float(old_lat))
             old_lon = COORD_FORMAT.format(float(old_lon))
 
-        if add_lat and add_lon and del_lat and del_lon and (add_lat != del_lat or add_lon != del_lon):
-            distance, direction = define_dist_and_dir_to_search(del_lat, del_lon, add_lat, add_lon)
-        elif add_lat and add_lon and del_lat and del_lon and (add_lat == del_lat and add_lon == del_lon):
-            distance, direction = None, None
+        if add_lat and add_lon and del_lat and del_lon:
+            if add_lat != del_lat or add_lon != del_lon:
+                distance, direction = define_dist_and_dir_to_search(del_lat, del_lon, add_lat, add_lon)
+            elif add_lat == del_lat and add_lon == del_lon:
+                # no change in coordinates
+                return ''
         elif add_lat and add_lon and old_lat and old_lon and (add_lat != old_lat or add_lon != old_lon):
             distance, direction = define_dist_and_dir_to_search(old_lat, old_lon, add_lat, add_lon)
         else:
-            distance, direction = None, None
+            return ''
 
         if distance and direction:
             if distance >= 1:

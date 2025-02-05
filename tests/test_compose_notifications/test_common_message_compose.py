@@ -160,8 +160,6 @@ class TestCommonMessageComposer:
             change_type=ChangeType.topic_first_post_change,
             topic_type_id=TopicType.search_regular,
             new_value=new_value,
-            search_latitude='56.1234',
-            search_longitude='60.1234',
         )
         CommonMessageComposer(record).compose()
         assert (
@@ -190,4 +188,17 @@ class TestCommonMessageComposer:
         assert (
             record.message
             == '🔀Изменения в первом посте по {region}:\n\n➖Удалено:<s>Ожидается выезд!</s>➕Добавлено:Штаб начнёт работать с 14:00 по адресу:Стоянка на заправке Газпромнефть, Маньковский разворот, Сергиево-Посадский г.о.56.376108, 38.108829'
+        )
+
+    def test_topic_first_post_change_5(self):
+        new_value = r"{'del': [], 'add': ['Новые координаты 57.1234 61.12345']}"
+        record = LineInChageFactory.build(
+            change_type=ChangeType.topic_first_post_change,
+            topic_type_id=TopicType.search_regular,
+            new_value=new_value,
+        )
+        CommonMessageComposer(record).compose()
+        assert (
+            record.message
+            == '🔀Изменения в первом посте по {region}:\n\n➕Добавлено:\nНовые координаты <code>57.1234 61.12345</code>\n\n\nКоординаты сместились на ~126 км &#8601;&#xFE0E;'
         )
