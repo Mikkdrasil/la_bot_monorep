@@ -34,7 +34,8 @@ class LogRecordExtractor:
 
     def get_line(self) -> LineInChangeLog | None:
         line = self.select_first_record_from_change_log(self.record_id)
-        self.enrich_new_record(line)
+        if line:
+            self.enrich_new_record(line)
         return line
 
     def select_first_record_from_change_log(self, record_id: int | None = None) -> LineInChangeLog | None:
@@ -78,7 +79,7 @@ class LogRecordExtractor:
             forum_search_num=one_line_in_change_log[0],
             changed_field=one_line_in_change_log[1],
             new_value=one_line_in_change_log[2],
-            change_id=one_line_in_change_log[3],
+            change_log_id=one_line_in_change_log[3],
             change_type=one_line_in_change_log[4],
         )
 
@@ -268,8 +269,9 @@ class LogRecordExtractor:
             # limit notification sending only for searches started 60 days ago
             # 60 days – is a compromise and can be reviewed if community votes for another setting
             try:
+                FORUM_FOLDERS_OF_SAMARA = {333, 305, 334, 306, 190}
                 latest_when_alert = r_line.start_time + datetime.timedelta(days=WINDOW_FOR_NOTIFICATIONS_DAYS)
-                if latest_when_alert < datetime.datetime.now() and r_line.forum_folder not in {333, 305, 334, 306, 190}:
+                if latest_when_alert < datetime.datetime.now() and r_line.forum_folder not in FORUM_FOLDERS_OF_SAMARA:
                     r_line.ignore = True
 
                     # DEBUG purposes only
@@ -277,7 +279,7 @@ class LogRecordExtractor:
                         f'ignoring old search upd {r_line.forum_search_num} with start time {r_line.start_time}'
                     )
                 # FIXME – 03.12.2023 – checking that Samara is not filtered by 60 days
-                if latest_when_alert < datetime.datetime.now() and r_line.forum_folder in {333, 305, 334, 306, 190}:
+                if latest_when_alert < datetime.datetime.now() and r_line.forum_folder in FORUM_FOLDERS_OF_SAMARA:
                     notify_admin(f'☀️ SAMARA >60 {r_line.link}')
                 # FIXME ^^^
 

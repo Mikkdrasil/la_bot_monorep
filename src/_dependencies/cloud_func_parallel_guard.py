@@ -76,7 +76,7 @@ def check_and_save_event_id(
     context,
     event: str,
     function_id: int,
-    list_of_change_log_ids: list[str] | None,
+    list_of_change_log_ids: list[int] | None,
     triggered_by_func_id: int,
     func_name: str,
     interval: int,

@@ -13,7 +13,7 @@ import compose_notifications._utils.notif_common
 import compose_notifications._utils.users_list_composer
 from _dependencies.commons import sqlalchemy_get_pool
 from compose_notifications import main
-from compose_notifications._utils.notif_common import get_coords_from_list
+from compose_notifications._utils.notif_common import NotifType, TopicType, get_coords_from_list
 from compose_notifications.main import LineInChangeLog
 from tests.common import get_event_with_data
 from tests.factories import db_models
@@ -142,7 +142,7 @@ def test_get_change_log_record_by_id(
     connection: Connection, change_log_db_record: db_models.ChangeLog, search_record: db_models.Search
 ):
     record = main.LogRecordExtractor(conn=connection, record_id=change_log_db_record.id).get_line()
-    assert record.change_id == change_log_db_record.id
+    assert record.change_log_id == change_log_db_record.id
     assert record.changed_field == change_log_db_record.changed_field
     assert record.forum_search_num == change_log_db_record.search_forum_num
 

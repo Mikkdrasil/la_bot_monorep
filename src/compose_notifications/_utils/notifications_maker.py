@@ -36,7 +36,7 @@ class NotificationComposer:
 
             topic_id = new_record.forum_search_num
             change_type = new_record.change_type
-            change_log_id = new_record.change_id
+            change_log_id = new_record.change_log_id
 
             users_who_should_not_be_informed, this_record_was_processed_already, mailing_id = self.process_mailing_id(
                 change_log_id, topic_id, change_type
@@ -310,9 +310,9 @@ class NotificationComposer:
         this_record_was_processed_already,
         mailing_id,
         user: User,
-    ) -> bool:
+    ):
         change_type = new_record.change_type
-        change_log_id = new_record.change_id
+        change_log_id = new_record.change_log_id
 
         s_lat = new_record.search_latitude
         s_lon = new_record.search_longitude
@@ -323,7 +323,7 @@ class NotificationComposer:
         # define if user received this message already
         if this_record_was_processed_already:
             this_user_was_notified = self.get_from_sql_if_was_notified_already(
-                user.user_id, 'text', new_record.change_id
+                user.user_id, 'text', new_record.change_log_id
             )
 
             logging.info(f'this user was notified already {user.user_id}, {this_user_was_notified}')
@@ -333,12 +333,12 @@ class NotificationComposer:
                 logging.info('this user is NOT in the list of non-notifiers')
 
             if this_user_was_notified:
-                return False
+                return
 
         # start composing individual messages (specific user on specific situation)
-        user_message = compose_message_for_user(new_record, user, region_to_show)
+        user_message = MessageComposer(new_record, user, region_to_show).compose_message_for_user()
         if not user_message:
-            return False
+            return
 
         # TODO: to delete msg_group at all ?
         # messages followed by coordinates (sendMessage + sendLocation) have same group
@@ -411,8 +411,6 @@ class NotificationComposer:
             except Exception as ee:
                 logging.info('exception happened')
                 logging.exception(ee)
-
-        return True
 
     def get_the_new_group_id(self) -> int:
         """define the max message_group_id in notif_by_user and add +1"""
@@ -529,12 +527,12 @@ class NotificationComposer:
             if new_record.processed:
                 if not new_record.ignore:
                     sql_text = sqlalchemy.text("""UPDATE change_log SET notification_sent = 'y' WHERE id=:a;""")
-                    self.conn.execute(sql_text, a=new_record.change_id)
-                    logging.info(f'The New Record {new_record.change_id} was marked as processed in PSQL')
+                    self.conn.execute(sql_text, a=new_record.change_log_id)
+                    logging.info(f'The New Record {new_record.change_log_id} was marked as processed in PSQL')
                 else:
                     sql_text = sqlalchemy.text("""UPDATE change_log SET notification_sent = 'n' WHERE id=:a;""")
-                    self.conn.execute(sql_text, a=new_record.change_id)
-                    logging.info(f'The New Record {new_record.change_id} was marked as IGNORED in PSQL')
+                    self.conn.execute(sql_text, a=new_record.change_log_id)
+                    logging.info(f'The New Record {new_record.change_log_id} was marked as IGNORED in PSQL')
 
             logging.info('All Updates are marked as processed in Change Log')
 
@@ -570,7 +568,7 @@ class NotificationComposer:
                     self.conn.execute(sql_text, a=record.forum_search_num)
                 # FIXME ^^^
 
-                logging.info(f'The Update {record.change_id} with Comments that are processed and not ignored')
+                logging.info(f'The Update {record.change_log_id} with Comments that are processed and not ignored')
                 logging.info('All Comments are marked as processed')
 
         except Exception as e:
@@ -589,155 +587,165 @@ class NotificationComposer:
             notify_admin('ERROR: Not able to mark Comments as Processed!')
 
 
-def compose_message_for_user(new_record: LineInChangeLog, user: User, region_to_show) -> str:
-    change_type = new_record.change_type
-    topic_type_id = new_record.topic_type_id
-    if change_type == 0:  # new topic: new search, new event
-        if topic_type_id in SEARCH_TOPIC_TYPES:  # if it's a new search
-            message = compose_individual_message_on_new_search(new_record, user, region_to_show)
-        else:  # new event
-            message = new_record.message[0]
+class MessageComposer:
+    def __init__(self, new_record: LineInChangeLog, user: User, region_to_show):
+        self.new_record = new_record
+        self.user = user
+        self.region_to_show = region_to_show
 
-    elif change_type == 1 and topic_type_id in SEARCH_TOPIC_TYPES:  # search status change
-        message = new_record.message[0]
-        if user.user_in_multi_folders and new_record.message[1]:
+    def compose_message_for_user(self) -> str:
+        change_type = self.new_record.change_type
+        topic_type_id = self.new_record.topic_type_id
+        if change_type == 0:  # new topic: new search, new event
+            if topic_type_id in SEARCH_TOPIC_TYPES:  # if it's a new search
+                message = self._compose_individual_message_on_new_search()
+            else:  # new event
+                message = self.new_record.message[0]
+
+        elif change_type == 1 and topic_type_id in SEARCH_TOPIC_TYPES:  # search status change
+            message = self.new_record.message[0]
+            if self.user.user_in_multi_folders and self.new_record.message[1]:
+                message += self.new_record.message[1]
+
+        elif change_type == 2:  # 'title_change':
+            message = self.new_record.message
+
+        elif change_type == 3:  # 'replies_num_change':
+            message = self.new_record.message[0]
+
+        elif change_type == 4:  # 'inforg_replies':
+            message = self.new_record.message[0]
+            if self.user.user_in_multi_folders and self.new_record.message[1]:
+                message += self.new_record.message[1]
+            if self.new_record.message[2]:
+                message += self.new_record.message[2]
+
+        elif change_type == 8:  # first_post_change
+            message = self._compose_individual_message_on_first_post_change()
+        return message
+
+    def _compose_individual_message_on_first_post_change(self) -> str:
+        """compose individual message for notification of every user on change of first post"""
+
+        message = self.new_record.message
+        region = f' ({self.region_to_show})' if self.region_to_show else ''
+        message = message.format(region=region)
+
+        return message
+
+    def _compose_individual_message_on_new_search(self) -> str:
+        """compose individual message for notification of every user on new search"""
+
+        new_record = self.new_record
+        user = self.user
+        region_to_show = self.region_to_show
+
+        s_lat = new_record.search_latitude
+        s_lon = new_record.search_longitude
+        u_lat = user.user_latitude
+        u_lon = user.user_longitude
+        num_of_sent = user.user_new_search_notifs
+
+        place_link = ''
+        clickable_coords = ''
+        tip_on_click_to_copy = ''
+        tip_on_home_coords = ''
+
+        region_wording = f' в регионе {region_to_show}' if region_to_show else ''
+
+        # 0. Heading and Region clause if user is 'multi-regional'
+        message = f'{new_record.topic_emoji}Новый поиск{region_wording}!\n'
+
+        # 1. Search important attributes - common part (e.g. 'Внимание, выезд!)
+        if new_record.message[1]:
             message += new_record.message[1]
 
-    elif change_type == 2:  # 'title_change':
-        message = new_record.message
+        # 2. Person (e.g. 'Иванов 60' )
+        message += '\n' + new_record.message[0]
 
-    elif change_type == 3:  # 'replies_num_change':
-        message = new_record.message[0]
+        # 3. Dist & Dir – individual part for every user
+        if s_lat and s_lon and u_lat and u_lon:
+            try:
+                dist, direct = define_dist_and_dir_to_search(s_lat, s_lon, u_lat, u_lon)
+                dist = int(dist)
+                direction = f'\n\nОт вас ~{dist} км {direct}'
 
-    elif change_type == 4:  # 'inforg_replies':
-        message = new_record.message[0]
-        if user.user_in_multi_folders and new_record.message[1]:
-            message += new_record.message[1]
-        if new_record.message[2]:
-            message += new_record.message[2]
-
-    elif change_type == 8:  # first_post_change
-        message = compose_individual_message_on_first_post_change(new_record, region_to_show)
-    return message
-
-
-def compose_individual_message_on_first_post_change(new_record: LineInChangeLog, region_to_show):
-    """compose individual message for notification of every user on change of first post"""
-
-    message = new_record.message
-    region = f' ({region_to_show})' if region_to_show else ''
-    message = message.format(region=region)
-
-    return message
-
-
-def compose_individual_message_on_new_search(new_record: LineInChangeLog, user: User, region_to_show):
-    """compose individual message for notification of every user on new search"""
-
-    s_lat = new_record.search_latitude
-    s_lon = new_record.search_longitude
-    u_lat = user.user_latitude
-    u_lon = user.user_longitude
-    num_of_sent = user.user_new_search_notifs
-
-    place_link = ''
-    clickable_coords = ''
-    tip_on_click_to_copy = ''
-    tip_on_home_coords = ''
-
-    region_wording = f' в регионе {region_to_show}' if region_to_show else ''
-
-    # 0. Heading and Region clause if user is 'multi-regional'
-    message = f'{new_record.topic_emoji}Новый поиск{region_wording}!\n'
-
-    # 1. Search important attributes - common part (e.g. 'Внимание, выезд!)
-    if new_record.message[1]:
-        message += new_record.message[1]
-
-    # 2. Person (e.g. 'Иванов 60' )
-    message += '\n' + new_record.message[0]
-
-    # 3. Dist & Dir – individual part for every user
-    if s_lat and s_lon and u_lat and u_lon:
-        try:
-            dist, direct = define_dist_and_dir_to_search(s_lat, s_lon, u_lat, u_lon)
-            dist = int(dist)
-            direction = f'\n\nОт вас ~{dist} км {direct}'
-
-            message += generate_yandex_maps_place_link2(s_lat, s_lon, direction)
-            message += f'\n<code>{COORD_FORMAT.format(float(s_lat))}, ' f'{COORD_FORMAT.format(float(s_lon))}</code>'
-
-        except Exception as e:
-            logging.info(
-                f'Not able to compose individual msg with distance & direction, params: '
-                f'[{new_record}, {s_lat}, {s_lon}, {u_lat}, {u_lon}]'
-            )
-            logging.exception(e)
-
-    if s_lat and s_lon and not u_lat and not u_lon:
-        try:
-            message += '\n\n' + generate_yandex_maps_place_link2(s_lat, s_lon, 'map')
-
-        except Exception as e:
-            logging.info(
-                f'Not able to compose message with Yandex Map Link, params: '
-                f'[{new_record}, {s_lat}, {s_lon}, {u_lat}, {u_lon}]'
-            )
-            logging.exception(e)
-
-    # 4. Managers – common part
-    if new_record.message[2]:
-        message += '\n\n' + new_record.message[2]
-
-    message += '\n\n'
-
-    # 5. Tips and Suggestions
-    if not num_of_sent or num_of_sent in FIB_LIST:
-        if s_lat and s_lon:
-            message += '<i>Совет: Координаты и телефоны можно скопировать, нажав на них.</i>\n'
-
-        if s_lat and s_lon and not u_lat and not u_lon:
-            message += (
-                '<i>Совет: Чтобы Бот показывал Направление и Расстояние до поиска – просто укажите ваши '
-                '"Домашние координаты" в Настройках Бота.</i>'
-            )
-
-    if s_lat and s_lon:
-        clickable_coords = f'<code>{COORD_FORMAT.format(float(s_lat))}, {COORD_FORMAT.format(float(s_lon))}</code>'
-        if u_lat and u_lon:
-            dist, direct = define_dist_and_dir_to_search(s_lat, s_lon, u_lat, u_lon)
-            dist = int(dist)
-            place = f'От вас ~{dist} км {direct}'
-        else:
-            place = 'Карта'
-        place_link = f'<a href="https://yandex.ru/maps/?pt={s_lon},{s_lat}&z=11&l=map">{place}</a>'
-
-        if not num_of_sent or num_of_sent in FIB_LIST:
-            tip_on_click_to_copy = '<i>Совет: Координаты и телефоны можно скопировать, нажав на них.</i>'
-            if not u_lat and not u_lon:
-                tip_on_home_coords = (
-                    '<i>Совет: Чтобы Бот показывал Направление и Расстояние до поиска – просто '
-                    'укажите ваши "Домашние координаты" в Настройках Бота.</i>'
+                message += generate_yandex_maps_place_link2(s_lat, s_lon, direction)
+                message += (
+                    f'\n<code>{COORD_FORMAT.format(float(s_lat))}, ' f'{COORD_FORMAT.format(float(s_lon))}</code>'
                 )
 
-    # TODO - yet not implemented new message template
-    # obj = new_record.message_object
-    # final_message = f"""{new_record.topic_emoji}Новый поиск{region_wording}!\n
-    #                     {obj.activities}\n\n
-    #                     {obj.clickable_name}\n\n
-    #                     {place_link}\n
-    #                     {clickable_coords}\n\n
-    #                     {obj.managers}\n\n
-    #                     {tip_on_click_to_copy}\n\n
-    #                     {tip_on_home_coords}"""
+            except Exception as e:
+                logging.info(
+                    f'Not able to compose individual msg with distance & direction, params: '
+                    f'[{new_record}, {s_lat}, {s_lon}, {u_lat}, {u_lon}]'
+                )
+                logging.exception(e)
 
-    # final_message = re.sub(r'\s{3,}', '\n\n', final_message)  # clean excessive blank lines
-    # final_message = re.sub(r'\s*$', '', final_message)  # clean blank symbols in the end of file
-    logging.info(f'OLD - FINAL NEW MESSAGE FOR NEW SEARCH: {message}')
-    # logging.info(f'NEW - FINAL NEW MESSAGE FOR NEW SEARCH: {final_message}')
-    # TODO ^^^
+        if s_lat and s_lon and not u_lat and not u_lon:
+            try:
+                message += '\n\n' + generate_yandex_maps_place_link2(s_lat, s_lon, 'map')
 
-    return message
+            except Exception as e:
+                logging.info(
+                    f'Not able to compose message with Yandex Map Link, params: '
+                    f'[{new_record}, {s_lat}, {s_lon}, {u_lat}, {u_lon}]'
+                )
+                logging.exception(e)
+
+        # 4. Managers – common part
+        if new_record.message[2]:
+            message += '\n\n' + new_record.message[2]
+
+        message += '\n\n'
+
+        # 5. Tips and Suggestions
+        if not num_of_sent or num_of_sent in FIB_LIST:
+            if s_lat and s_lon:
+                message += '<i>Совет: Координаты и телефоны можно скопировать, нажав на них.</i>\n'
+
+            if s_lat and s_lon and not u_lat and not u_lon:
+                message += (
+                    '<i>Совет: Чтобы Бот показывал Направление и Расстояние до поиска – просто укажите ваши '
+                    '"Домашние координаты" в Настройках Бота.</i>'
+                )
+
+        if s_lat and s_lon:
+            clickable_coords = f'<code>{COORD_FORMAT.format(float(s_lat))}, {COORD_FORMAT.format(float(s_lon))}</code>'
+            if u_lat and u_lon:
+                dist, direct = define_dist_and_dir_to_search(s_lat, s_lon, u_lat, u_lon)
+                dist = int(dist)
+                place = f'От вас ~{dist} км {direct}'
+            else:
+                place = 'Карта'
+            place_link = f'<a href="https://yandex.ru/maps/?pt={s_lon},{s_lat}&z=11&l=map">{place}</a>'
+
+            if not num_of_sent or num_of_sent in FIB_LIST:
+                tip_on_click_to_copy = '<i>Совет: Координаты и телефоны можно скопировать, нажав на них.</i>'
+                if not u_lat and not u_lon:
+                    tip_on_home_coords = (
+                        '<i>Совет: Чтобы Бот показывал Направление и Расстояние до поиска – просто '
+                        'укажите ваши "Домашние координаты" в Настройках Бота.</i>'
+                    )
+
+        # TODO - yet not implemented new message template
+        # obj = new_record.message_object
+        # final_message = f"""{new_record.topic_emoji}Новый поиск{region_wording}!\n
+        #                     {obj.activities}\n\n
+        #                     {obj.clickable_name}\n\n
+        #                     {place_link}\n
+        #                     {clickable_coords}\n\n
+        #                     {obj.managers}\n\n
+        #                     {tip_on_click_to_copy}\n\n
+        #                     {tip_on_home_coords}"""
+
+        # final_message = re.sub(r'\s{3,}', '\n\n', final_message)  # clean excessive blank lines
+        # final_message = re.sub(r'\s*$', '', final_message)  # clean blank symbols in the end of file
+        logging.info(f'OLD - FINAL NEW MESSAGE FOR NEW SEARCH: {message}')
+        # logging.info(f'NEW - FINAL NEW MESSAGE FOR NEW SEARCH: {final_message}')
+        # TODO ^^^
+
+        return message
 
 
 def generate_yandex_maps_place_link2(lat: str, lon: str, param: str) -> str:

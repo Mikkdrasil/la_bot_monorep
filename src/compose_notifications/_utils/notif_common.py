@@ -87,12 +87,12 @@ class Comment:
 
 @dataclass
 class LineInChangeLog:
-    forum_search_num: int | None = None
+    forum_search_num: int
+    changed_field: Any
+    new_value: Any
+    change_log_id: int
+    change_type: int  # it is int from 0 to 99 which represents "change_type" column in change_log
     topic_type_id: int = 0
-    change_type: int = 0  # it is int from 0 to 99 which represents "change_type" column in change_log
-    changed_field: Any = None
-    change_id: int = 0  # means change_log_id
-    new_value: Any = None
     name: str = ''
     link: str = ''
     status: Any = None
@@ -100,7 +100,7 @@ class LineInChangeLog:
     n_of_replies: int = 0  # not used
     title: str = ''
     age: int = 0
-    age_wording: Any = None
+    age_wording: str = ''
     forum_folder: int = 0
     activities: list[int] = field(default_factory=list)
     comments: list[Comment] = field(default_factory=list)
@@ -111,16 +111,16 @@ class LineInChangeLog:
     managers: list[str] = field(default_factory=list)
     start_time: datetime.datetime = field(default_factory=datetime.datetime.now)
     ignore: bool = False
-    region: Any = None
+    region: str | None = None
     search_latitude: str | None = None
     search_longitude: str | None = None
-    coords_change_type: Any = None
+    # coords_change_type: Any = None
     city_locations: Any = None
-    display_name: Any = None
-    age_min: Any = None
-    age_max: Any = None
+    display_name: str = ''
+    age_min: int | None = None
+    age_max: int | None = None
     clickable_name: str = ''
-    topic_emoji: Any = None
+    topic_emoji: str = ''
 
 
 @dataclass
@@ -129,16 +129,16 @@ class User:
     username_telegram: str | None = None
     # notification_preferences: str = None
     # notif_pref_ids_list: list = None
-    all_notifs: list = None
+    all_notifs: bool = False
     # topic_type_pref_ids_list: list = None
-    user_latitude: float = None
-    user_longitude: float = None
+    user_latitude: str = ''
+    user_longitude: str = ''
     # user_regions: list = None  # TODO remove
-    user_in_multi_folders: bool = True
+    user_in_multi_folders: bool = False
     # user_corr_regions: list = None
     user_new_search_notifs: int = 0
-    user_role: str = None  # not used
-    age_periods: list = None
+    user_role: str = ''  # not used
+    age_periods: list = field(default_factory=list)
     radius: int = 0
 
 
@@ -197,9 +197,7 @@ def calc_bearing(lat_2: float, lon_2: float, lat_1: float, lon_1: float) -> floa
     return bearing
 
 
-def define_dist_and_dir_to_search(
-    search_lat: str, search_lon: str, user_let: float, user_lon: float
-) -> tuple[float, str]:
+def define_dist_and_dir_to_search(search_lat: str, search_lon: str, user_let: str, user_lon: str) -> tuple[float, str]:
     """define direction & distance from user's home coordinates to search coordinates"""
 
     earth_radius = 6373.0  # radius of the Earth

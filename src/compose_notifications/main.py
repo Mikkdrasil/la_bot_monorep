@@ -158,7 +158,7 @@ def main(event: dict, context: str) -> Any:  # noqa
             )
 
             try:
-                list_of_change_log_ids = [new_record.change_id]
+                list_of_change_log_ids = [new_record.change_log_id]
             except Exception as e:  # noqa
                 logging.exception(e)
 
