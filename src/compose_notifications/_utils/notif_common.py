@@ -100,7 +100,7 @@ class Comment:
 @dataclass
 class LineInChangeLog:
     forum_search_num: int
-    changed_field: Any
+    changed_field: str  # not used, can be removed
     new_value: str
     change_log_id: int
     change_type: ChangeType
@@ -108,8 +108,8 @@ class LineInChangeLog:
     # need some default value for topic_type_id. It will be owerwritten in "enrich_new_record_from_searches"
     name: str = ''
     link: str = ''
-    status: Any = None
-    new_status: Any = None
+    status: str = ''
+    new_status: str = ""
     n_of_replies: int = 0  # not used
     title: str = ''
     age: int = 0
@@ -118,7 +118,6 @@ class LineInChangeLog:
     activities: list[str] = field(default_factory=list)
     comments: list[Comment] = field(default_factory=list)
     comments_inforg: list[Comment] = field(default_factory=list)
-    message_common_part: Any = None
     message_object: Any | Message | MessageNewTopic = None  # FIXME - maybe should replace "message"
     processed: bool = False
     managers: str = '[]'

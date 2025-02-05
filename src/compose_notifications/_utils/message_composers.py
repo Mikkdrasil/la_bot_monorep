@@ -34,7 +34,6 @@ class CommonMessageComposer:
         self.line = line
 
     def compose(self) -> None:
-        self._make_com_message_texts()
         self._make_clickable_name()
         self._make_emoji()
 
@@ -71,30 +70,6 @@ class CommonMessageComposer:
 
         line.clickable_name = f'<a href="{line.link}">{link_text}</a>'
 
-    def _make_com_message_texts(self) -> None:
-        """add user-independent message text to the New Records"""
-        line = self.line
-        try:
-            if line.change_type == ChangeType.topic_new:
-                self._compose_com_msg_on_new_topic()
-            elif line.change_type == ChangeType.topic_status_change and line.topic_type_id in SEARCH_TOPIC_TYPES:
-                self._compose_com_msg_on_status_change()
-            elif line.change_type == ChangeType.topic_title_change:
-                self._compose_com_msg_on_title_change()
-            elif line.change_type == ChangeType.topic_comment_new:
-                self._compose_com_msg_on_new_comments()
-            elif line.change_type == ChangeType.topic_inforg_comment_new:
-                self._compose_com_msg_on_inforg_comments()
-            elif line.change_type == ChangeType.topic_first_post_change:
-                self._compose_com_msg_on_first_post_change()
-
-            logging.info('New Record enriched with common Message Text')
-
-        except Exception as e:
-            logging.error('Not able to enrich New Record with common Message Texts:' + str(e))
-            logging.exception(e)
-            logging.info('FOR DEBUG OF ERROR – line is: ' + str(line))
-
     def _compose_com_msg_on_first_post_change(self) -> None:
         """compose the common, user-independent message on search first post change"""
         line = self.line
@@ -123,8 +98,7 @@ class CommonMessageComposer:
             message = saved_message.message
 
         if not message:
-            line.message_common_part = ''
-            return
+            return ''
 
         clickable_name = line.clickable_name
         if line.topic_type_id in SEARCH_TOPIC_TYPES:
@@ -145,7 +119,7 @@ class CommonMessageComposer:
         else:
             resulting_message = ''
 
-        line.message_common_part = resulting_message
+        return resulting_message
 
     def _get_coord_change_phrase(
         self,
@@ -203,7 +177,7 @@ class CommonMessageComposer:
             if line.region:
                 msg_2 = f' ({line.region})'
 
-        line.message_common_part = msg_1, msg_2, msg_3
+        return msg_1, msg_2, msg_3
 
     def _compose_com_msg_on_new_comments(self) -> None:
         """compose the common, user-independent message on ALL search comments change"""
@@ -232,7 +206,7 @@ class CommonMessageComposer:
 
         msg = f'Новые комментарии по {activity} {line.clickable_name}:\n{msg}' if msg else ''
 
-        line.message_common_part = msg, None  # TODO ???
+        return msg
 
     def _compose_com_msg_on_new_topic(self) -> None:
         """compose the common, user-independent message on new topic (search, event)"""
@@ -249,8 +223,8 @@ class CommonMessageComposer:
         if topic_type_id == TopicType.event:
             clickable_name = f'🗓️Новое мероприятие!\n{clickable_name}'
             message.clickable_name = clickable_name
-            line.message_common_part = [clickable_name, None, None]
-            line.message_object = message
+            return [clickable_name, None, None]
+            line.message_object = message # TODO
 
         # 1. List of activities – user-independent
         msg_1 = ''
@@ -282,8 +256,8 @@ class CommonMessageComposer:
             message.managers = msg_3
 
         logging.info('msg 2 + msg 1 + msg 3: ' + str(msg_2) + ' // ' + str(msg_1) + ' // ' + str(msg_3))
-        line.message_common_part = [msg_2, msg_1, msg_3]  # 1 - person, 2 - activities, 3 - managers
-        line.message_object = message
+        return msg_2, msg_1, msg_3  # 1 - person, 2 - activities, 3 - managers
+        line.message_object = message # TODO
 
     def _compose_com_msg_on_status_change(self) -> None:
         """compose the common, user-independent message on search status change"""
@@ -301,10 +275,9 @@ class CommonMessageComposer:
             status_info = status
 
         msg_1 = f'{status_info} – изменение статуса по {clickable_name}'
-
         msg_2 = f' ({region})' if region else None
 
-        line.message_common_part = msg_1, msg_2
+        return msg_1, msg_2
 
     def _compose_com_msg_on_title_change(self) -> None:
         """compose the common, user-independent message on search title change"""
@@ -313,7 +286,7 @@ class CommonMessageComposer:
         activity = 'мероприятия' if line.topic_type_id == TopicType.event else 'поиска'
         msg = f'{line.title} – обновление заголовка {activity} по {line.clickable_name}'
 
-        line.message_common_part = msg
+        return msg
 
 
 class PersonalMessageComposer:
@@ -328,54 +301,53 @@ class PersonalMessageComposer:
 
         change_type = self.new_record.change_type
         topic_type_id = self.new_record.topic_type_id
+        
         if change_type == ChangeType.topic_new:
-            common_mesage_composer._compose_com_msg_on_new_topic()
+            common_message_parts = common_mesage_composer._compose_com_msg_on_new_topic()
             return (
-                self._compose_individual_message_on_new_search(user)
+                self._compose_individual_message_on_new_search(user, common_message_parts)
                 if topic_type_id in SEARCH_TOPIC_TYPES
-                else self.new_record.message_common_part[0]
+                else common_message_parts[0]
             )
 
         elif change_type == ChangeType.topic_status_change and topic_type_id in SEARCH_TOPIC_TYPES:
-            common_mesage_composer._compose_com_msg_on_status_change()
-            message = self.new_record.message_common_part[0]
-            if user.user_in_multi_folders and self.new_record.message_common_part[1]:
-                message += self.new_record.message_common_part[1]
+            common_mesage = common_mesage_composer._compose_com_msg_on_status_change()
+            message = common_mesage[0]
+            if user.user_in_multi_folders and common_mesage[1]:
+                message += common_mesage[1]
             return message
 
         elif change_type == ChangeType.topic_title_change:
-            common_mesage_composer._compose_com_msg_on_title_change()
-            return self.new_record.message_common_part  # TODO ???
+            return common_mesage_composer._compose_com_msg_on_title_change()
 
         elif change_type == ChangeType.topic_comment_new:
-            common_mesage_composer._compose_com_msg_on_new_comments()
-            return self.new_record.message_common_part[0]  # TODO ???
+            return common_mesage_composer._compose_com_msg_on_new_comments()
 
         elif change_type == ChangeType.topic_inforg_comment_new:
-            common_mesage_composer._compose_com_msg_on_inforg_comments()
-            message = self.new_record.message_common_part[0]
-            if user.user_in_multi_folders and self.new_record.message_common_part[1]:
-                message += self.new_record.message_common_part[1]
-            if self.new_record.message_common_part[2]:
-                message += self.new_record.message_common_part[2]
+            message_parts = common_mesage_composer._compose_com_msg_on_inforg_comments()
+            message = message_parts[0]
+            if user.user_in_multi_folders and message_parts[1]:
+                message += message_parts[1]
+            if message_parts[2]:
+                message += message_parts[2]
             return message
 
         elif change_type == ChangeType.topic_first_post_change:
-            common_mesage_composer._compose_com_msg_on_first_post_change()
-            return self._compose_individual_message_on_first_post_change(user)
+            common_message = common_mesage_composer._compose_com_msg_on_first_post_change()
+            return self._compose_individual_message_on_first_post_change(user, common_message)
 
         return ''
 
-    def _compose_individual_message_on_first_post_change(self, user: User) -> str:
+    def _compose_individual_message_on_first_post_change(self, user: User, common_message: str) -> str:
         """compose individual message for notification of every user on change of first post"""
         region_to_show = self.new_record.region if user.user_in_multi_folders else None
-        message = self.new_record.message_common_part
+        message = common_message
         region = f' ({region_to_show})' if region_to_show else ''
         message = message.format(region=region)
 
         return message
 
-    def _compose_individual_message_on_new_search(self, user: User) -> str:
+    def _compose_individual_message_on_new_search(self, user: User, common_message_parts: list[str]) -> str:
         """compose individual message for notification of every user on new search"""
 
         new_record = self.new_record
@@ -398,11 +370,11 @@ class PersonalMessageComposer:
         message = f'{new_record.topic_emoji}Новый поиск{region_wording}!\n'
 
         # 1. Search important attributes - common part (e.g. 'Внимание, выезд!)
-        if new_record.message_common_part[1]:
-            message += new_record.message_common_part[1]
+        if common_message_parts[1]:
+            message += common_message_parts[1]
 
         # 2. Person (e.g. 'Иванов 60' )
-        message += '\n' + new_record.message_common_part[0]
+        message += '\n' + common_message_parts[0]
 
         # 3. Dist & Dir – individual part for every user
         if s_lat and s_lon and u_lat and u_lon:
@@ -435,8 +407,8 @@ class PersonalMessageComposer:
                 logging.exception(e)
 
         # 4. Managers – common part
-        if new_record.message_common_part[2]:
-            message += '\n\n' + new_record.message_common_part[2]
+        if common_message_parts[2]:
+            message += '\n\n' + common_message_parts[2]
 
         message += '\n\n'
 

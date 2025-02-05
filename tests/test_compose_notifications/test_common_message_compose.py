@@ -3,21 +3,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# from tests.factories.db_models import ChangeLog, User
+from tests.test_compose_notifications.factories import UserFactory
 from faker import Faker
 from polyfactory.factories import DataclassFactory
 
-from compose_notifications._utils.message_composers import CommonMessageComposer
+from compose_notifications._utils.message_composers import CommonMessageComposer, PersonalMessageComposer
 from compose_notifications._utils.notif_common import ChangeLogSavedValue, ChangeType, LineInChangeLog, TopicType
 
 faker = Faker('ru_RU')
 
 
 class LineInChageFactory(DataclassFactory[LineInChangeLog]):
-    # topic_type_id = TopicType.search_regular
-    # start_time = datetime.now()
-    # activities = [1, 2]
-    # managers = '["manager1","manager2"]'
     message = None
     clickable_name = ''
     topic_emoji = ''
@@ -61,7 +57,7 @@ class TestCommonMessageComposerClickableName:
         assert record.title in record.clickable_name
 
 
-class TestCommonMessageComposer:
+class TestMessageComposer:
     @pytest.mark.parametrize(
         'change_type',
         [
@@ -83,10 +79,10 @@ class TestCommonMessageComposer:
         record = LineInChageFactory.build(
             topic_type_id=TopicType.search_reverse,
             change_type=change_type,
-            message_common_part='',
         )
-        CommonMessageComposer(record).compose()
-        assert not record.message_common_part
+        user = UserFactory.build()
+        message = PersonalMessageComposer(record).compose_message_for_user(user)
+        assert not message
 
     def test_topic_new(self):
         record = LineInChageFactory.build(
@@ -96,8 +92,9 @@ class TestCommonMessageComposer:
             managers='["manager1","manager2 +79001234567"]',  # TODO check phone link in separate test
             activities=['some activity'],
         )
-        CommonMessageComposer(record).compose()
-        assert record.message_common_part
+        user = UserFactory.build()
+        message=PersonalMessageComposer(record).compose_message_for_user(user)
+        assert message
         assert 'Новое мероприятие' in record.message_common_part[0]
         assert 'some activity' in record.message_common_part[1]
         assert 'manager2 <code>+79001234567</code>' in record.message_common_part[2]
