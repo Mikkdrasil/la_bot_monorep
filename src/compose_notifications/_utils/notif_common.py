@@ -11,7 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 WINDOW_FOR_NOTIFICATIONS_DAYS = 60
 COORD_FORMAT = '{0:.5f}'
-COORD_PATTERN = r'0?[3-8]\d\.\d{1,10}[\s\w,]{0,10}[01]?[2-9]\d\.\d{1,10}'
+COORD_PATTERN = re.compile(r'0?[3-8]\d\.\d{1,10}[\s\w,]{0,10}[01]?[2-9]\d\.\d{1,10}')
+PHONE_RE = re.compile(r'(?:\+7|7|8)\s?[\s\-(]?\s?\d{3}[\s\-)]?\s?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}')
 
 
 class TopicType(IntEnum):
@@ -160,7 +161,7 @@ def add_tel_link(incoming_text: str) -> str:
     # Modifier for all users
 
     outcome_text = incoming_text
-    nums = re.findall(r'(?:\+7|7|8)\s?[\s\-(]?\s?\d{3}[\s\-)]?\s?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', incoming_text)
+    nums = re.findall(PHONE_RE, incoming_text)
     for num in nums:
         outcome_text = outcome_text.replace(num, '<code>' + str(num) + '</code>')
 
