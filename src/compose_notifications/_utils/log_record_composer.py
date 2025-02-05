@@ -232,26 +232,21 @@ class LogRecordExtractor:
     def enrich_new_record_with_search_activities(self, r_line: LineInChangeLog) -> None:
         """add the lists of current searches' activities to New Record"""
 
-        try:
-            query = sqlalchemy.text("""
-                SELECT dsa.activity_name from search_activities sa
-                LEFT JOIN dict_search_activities dsa ON sa.activity_type=dsa.activity_id
-                WHERE
-                    sa.search_forum_num = :a AND
-                    sa.activity_type <> '9 - hq closed' AND
-                    sa.activity_type <> '8 - info' AND
-                    sa.activity_status = 'ongoing' 
-                ORDER BY sa.id; 
-                                                   """)
+        query = sqlalchemy.text("""
+            SELECT dsa.activity_name from search_activities sa
+            LEFT JOIN dict_search_activities dsa ON sa.activity_type=dsa.activity_id
+            WHERE
+                sa.search_forum_num = :a AND
+                sa.activity_type <> '9 - hq closed' AND
+                sa.activity_type <> '8 - info' AND
+                sa.activity_status = 'ongoing' 
+            ORDER BY sa.id; 
+                                                """)
 
-            list_of_activities = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
-            r_line.activities = [a_line[0] for a_line in list_of_activities]
+        list_of_activities = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
+        r_line.activities = [a_line[0] for a_line in list_of_activities]
 
-            logging.info('New Record enriched with Search Activities')
-
-        except Exception as e:
-            logging.error('Not able to enrich New Records with Search Activities: ' + str(e))
-            logging.exception(e)
+        logging.info('New Record enriched with Search Activities')
 
     def enrich_new_record_with_managers(self, r_line: LineInChangeLog) -> None:
         """add the lists of current searches' managers to the New Record"""
@@ -261,24 +256,19 @@ class LogRecordExtractor:
             FROM search_attributes
             WHERE 
                 attribute_name='managers'
-                AND search_forum_num = :a;
+                AND search_forum_num = :a
             ORDER BY id; 
                                 """)
-        try:
-            list_of_managers = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
+        list_of_managers = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
 
-            # look for matching Forum Search Numbers in New Records List & Search Managers
+        # look for matching Forum Search Numbers in New Records List & Search Managers
 
-            for m_line in list_of_managers:
-                # TODO can be multiple lines with 'managers'?
-                if m_line[0] != '[]':
-                    r_line.managers = m_line[0]
+        for m_line in list_of_managers:
+            # TODO can be multiple lines with 'managers'?
+            if m_line[0] != '[]':
+                r_line.managers = m_line[0]
 
-            logging.info('New Record enriched with Managers')
-
-        except Exception as e:
-            logging.error('Not able to enrich New Records with Managers: ' + str(e))
-            logging.exception(e)
+        logging.info('New Record enriched with Managers')
 
     def enrich_new_record_with_comments(self, r_line: LineInChangeLog) -> None:
         """add the lists of new comments comments to the New Record"""
@@ -295,16 +285,11 @@ class LogRecordExtractor:
                 WHERE 
                     notification_sent IS NULL
                     AND search_forum_num = :a;
-                                        """)
+                                """)
 
-        try:
-            comments = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
-            r_line.comments = self._get_comments_from_query_result(comments)
-            logging.info(f'New Record enriched with Comments for all')
-
-        except Exception as e:
-            logging.error(f'Not able to enrich New Records with Comments for all:')
-            logging.exception(e)
+        comments = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
+        r_line.comments = self._get_comments_from_query_result(comments)
+        logging.info('New Record enriched with Comments for all')
 
     def enrich_new_record_with_inforg_comments(self, r_line: LineInChangeLog) -> None:
         """add the lists of new inforg comments to the New Record"""
@@ -323,16 +308,11 @@ class LogRecordExtractor:
                 AND LOWER(LEFT(comment_author_nickname,6))='инфорг'
                 AND comment_author_nickname!='Инфорг кинологов'
                 AND search_forum_num = :a;
-                                        """)
+                                """)
 
-        try:
-            comments = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
-            r_line.comments_inforg = self._get_comments_from_query_result(comments)
-            logging.info(f'New Record enriched with Comments for inforg')
-
-        except Exception as e:
-            logging.error(f'Not able to enrich New Records with Comments for inforg:')
-            logging.exception(e)
+        comments = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
+        r_line.comments_inforg = self._get_comments_from_query_result(comments)
+        logging.info('New Record enriched with Comments for inforg')
 
     def _get_comments_from_query_result(self, query_result: list[tuple]) -> list[Comment]:
         temp_list_of_comments: list[Comment] = []

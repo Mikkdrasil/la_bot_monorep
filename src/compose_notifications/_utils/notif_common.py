@@ -28,7 +28,14 @@ class TopicType(IntEnum):
     unrecognized = 99
 
 
-SEARCH_TOPIC_TYPES = {0, 1, 2, 3, 4, 5}
+SEARCH_TOPIC_TYPES = {
+    TopicType.search_regular,
+    TopicType.search_reverse,
+    TopicType.search_patrol,
+    TopicType.search_training,
+    TopicType.search_info_support,
+    TopicType.search_resonance,
+}
 
 
 class ChangeType(IntEnum):
@@ -86,8 +93,9 @@ class LineInChangeLog:
     changed_field: Any
     new_value: Any
     change_log_id: int
-    change_type: int  # enum NotifType
-    topic_type_id: int = 0  # enum TopicType
+    change_type: ChangeType
+    topic_type_id: TopicType = TopicType.search_regular
+    # need some default value for topic_type_id. It will be owerwritten in "enrich_new_record_from_searches"
     name: str = ''
     link: str = ''
     status: Any = None
@@ -103,7 +111,7 @@ class LineInChangeLog:
     message: Any = None
     message_object: Any | Message | MessageNewTopic = None  # FIXME - maybe should replace "message"
     processed: bool = False
-    managers: list[str] = field(default_factory=list)
+    managers: str = '[]'
     start_time: datetime.datetime = field(default_factory=datetime.datetime.now)
     ignore: bool = False
     region: str | None = None
@@ -215,7 +223,7 @@ def define_dist_and_dir_to_search(search_lat: str, search_lon: str, user_let: st
     return dist, direction
 
 
-def get_coords_from_list(input_list) -> tuple[str | None, str | None]:
+def get_coords_from_list(input_list: list[str]) -> tuple[str | None, str | None]:
     """get the list of coords [lat, lon] for the input list of strings"""
 
     if not input_list:

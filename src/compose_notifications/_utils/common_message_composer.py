@@ -48,27 +48,24 @@ class CommonMessageComposer:
             5: '🚨',  # search resonance
             10: '📝',  # event
         }
-        if topic_type_id:
-            line.topic_emoji = topic_type_dict[topic_type_id]
-        else:
-            line.topic_emoji = ''
+        line.topic_emoji = topic_type_dict.get(topic_type_id, '')
 
     def make_clickable_name(self) -> None:
         """add clickable name to the record"""
 
         line = self.line
+        link_text = ''
         if line.topic_type_id in SEARCH_TOPIC_TYPES:  # if it's search
             if line.display_name:
-                line.clickable_name = f'<a href="{line.link}">{line.display_name}</a>'
+                link_text = line.display_name
             else:
-                if line.name:
-                    name = line.name
-                else:
-                    name = 'БВП'
-                age_info = f' {line.age_wording}' if (name[0].isupper() and line.age) else ''
-                line.clickable_name = f'<a href="{line.link}">{name}{age_info}</a>'
+                name = line.name if line.name else 'БВП'
+                age_info = f'{line.age_wording}' if (name[0].isupper() and line.age) else ''
+                link_text = f'{name} {age_info}'.strip()
         else:  # if it's event or something else
-            line.clickable_name = f'<a href="{line.link}">{line.title}</a>'
+            link_text = line.title
+
+        line.clickable_name = f'<a href="{line.link}">{link_text}</a>'
 
     def make_com_message_texts(self) -> None:
         """add user-independent message text to the New Records"""
@@ -132,6 +129,33 @@ class CommonMessageComposer:
             else:
                 message = message_dict['message']
 
+        if not message:
+            line.message = ''
+            return
+
+        coord_change_phrase = self._get_coord_change_phrase(old_lat, old_lon, list_of_additions, list_of_deletions)
+
+        if type_id in SEARCH_TOPIC_TYPES:
+            resulting_message = (
+                f'{line.topic_emoji}🔀Изменения в первом посте по {clickable_name}{region}:\n\n{message}'
+                f'{coord_change_phrase}'
+            )
+        elif type_id == TopicType.event:
+            resulting_message = (
+                f'{line.topic_emoji}Изменения в описании мероприятия {clickable_name}{region}:\n\n{message}'
+            )
+        else:
+            resulting_message = ''
+
+        line.message = resulting_message
+
+    def _get_coord_change_phrase(
+        self,
+        old_lat: float | None,
+        old_lon: float | None,
+        list_of_additions: list[str],
+        list_of_deletions: list[str],
+    ) -> str:
         coord_change_phrase = ''
         add_lat, add_lon = get_coords_from_list(list_of_additions)
         del_lat, del_lon = get_coords_from_list(list_of_deletions)
@@ -155,23 +179,7 @@ class CommonMessageComposer:
             else:
                 coord_change_phrase = f'\n\nКоординаты сместились на ~{int(distance * 1000)} метров {direction}'
 
-        if not message:
-            line.message = ''
-            return
-
-        if type_id in SEARCH_TOPIC_TYPES:
-            resulting_message = (
-                f'{line.topic_emoji}🔀Изменения в первом посте по {clickable_name}{region}:\n\n{message}'
-                f'{coord_change_phrase}'
-            )
-        elif type_id == 10:
-            resulting_message = (
-                f'{line.topic_emoji}Изменения в описании мероприятия {clickable_name}{region}:\n\n{message}'
-            )
-        else:
-            resulting_message = ''
-
-        line.message = resulting_message
+        return coord_change_phrase
 
     def _compose_com_msg_on_inforg_comments(self) -> None:
         """compose the common, user-independent message on INFORG search comments change"""
@@ -210,9 +218,12 @@ class CommonMessageComposer:
                 comment_text = f'{comment.text[:500]}...' if len(comment.text) > 500 else comment.text
                 comment_text = add_tel_link(comment_text)
                 code_pos = comment_text.find('<code>')
-                text_before_code_pos = comment_text[:code_pos]
-                text_from_code_pos = comment_text[code_pos:]
-                # TODO fix test here. If <code> not in comment_text, we should return comment.text as is
+                if code_pos != -1:
+                    text_before_code_pos = comment_text[:code_pos]
+                    text_from_code_pos = comment_text[code_pos:]
+                else:
+                    text_before_code_pos = comment_text
+                    text_from_code_pos = ''
 
                 msg += (
                     f' &#8226; <a href="{url_prefix}{comment.author_link}">{comment.author_nickname}</a>: '
