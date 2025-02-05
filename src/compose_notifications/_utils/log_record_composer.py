@@ -18,9 +18,9 @@ from .notif_common import (
     WINDOW_FOR_NOTIFICATIONS_DAYS,
     ChangeType,
     Comment,
-    CommentsType,
     LineInChangeLog,
     MessageNewTopic,
+    TopicType,
     add_tel_link,
     define_dist_and_dir_to_search,
     get_coords_from_list,
@@ -62,11 +62,7 @@ class LogRecordExtractor:
             logging.info('no new records found in PSQL')
             return None
 
-        if not len(list(delta_in_cl)) > 0:
-            logging.info(f'new record is found in PSQL, however it is not list: {delta_in_cl}')
-            return None
-
-        one_line_in_change_log = [i for i in delta_in_cl[0]]
+        one_line_in_change_log = delta_in_cl[0]
 
         if not one_line_in_change_log:
             logging.info(
@@ -97,8 +93,10 @@ class LogRecordExtractor:
         self.enrich_new_record_from_searches(new_record)
         self.enrich_new_record_with_search_activities(new_record)
         self.enrich_new_record_with_managers(new_record)
-        self.enrich_new_record_with_comments(CommentsType.all, new_record)
-        self.enrich_new_record_with_comments(CommentsType.inforg, new_record)
+
+        self.enrich_new_record_with_comments(new_record)
+        self.enrich_new_record_with_inforg_comments(new_record)
+
         self.enrich_new_record_with_clickable_name(new_record)
         self.enrich_new_record_with_emoji(new_record)
         self.enrich_new_record_with_com_message_texts(new_record)
@@ -106,12 +104,8 @@ class LogRecordExtractor:
     def delete_ended_search_following(self, new_record: LineInChangeLog) -> None:  # issue425
         ### Delete from user_pref_search_whitelist if the search goes to one of ending statuses
 
-        if new_record.change_type == ChangeType.topic_status_change and new_record.status in [
-            'Завершен',
-            'НЖ',
-            'НП',
-            'Найден',
-        ]:
+        finished_statuses = ['Завершен', 'НЖ', 'НП', 'Найден']
+        if new_record.change_type == ChangeType.topic_status_change and new_record.status in finished_statuses:
             stmt = sqlalchemy.text("""DELETE FROM user_pref_search_whitelist WHERE search_id=:a;""")
             self.conn.execute(stmt, a=new_record.forum_search_num)
             logging.info(
@@ -157,8 +151,6 @@ class LogRecordExtractor:
         """add user-independent message text to the New Records"""
 
         try:
-            last_line = line
-
             if line.change_type == ChangeType.topic_new:
                 self.compose_com_msg_on_new_topic(line)
             elif line.change_type == ChangeType.topic_status_change and line.topic_type_id in SEARCH_TOPIC_TYPES:
@@ -177,7 +169,7 @@ class LogRecordExtractor:
         except Exception as e:
             logging.error('Not able to enrich New Record with common Message Texts:' + str(e))
             logging.exception(e)
-            logging.info('FOR DEBUG OF ERROR – line is: ' + str(last_line))
+            logging.info('FOR DEBUG OF ERROR – line is: ' + str(line))
 
     def define_family_name(self, title_string: str, predefined_fam_name: str | None) -> str:
         """define family name if it's not available as A SEPARATE FIELD in Searches table"""
@@ -350,73 +342,87 @@ class LogRecordExtractor:
             logging.error('Not able to enrich New Records with Managers: ' + str(e))
             logging.exception(e)
 
-    def enrich_new_record_with_comments(self, type_of_comments: CommentsType, r_line: LineInChangeLog) -> None:
-        """add the lists of new comments + new inforg comments to the New Record
-        TODO split to 2 separate methods"""
+    def enrich_new_record_with_comments(self, r_line: LineInChangeLog) -> None:
+        """add the lists of new comments comments to the New Record"""
+
+        # look for matching Forum Search Numbers in New Record List & Comments
+        if r_line.change_type not in {ChangeType.topic_inforg_comment_new, ChangeType.topic_comment_new}:
+            return
+
+        query = sqlalchemy.text("""
+                SELECT
+                comment_url, comment_text, comment_author_nickname, comment_author_link,
+                search_forum_num, comment_num, comment_global_num
+                FROM comments 
+                WHERE 
+                    notification_sent IS NULL
+                    AND search_forum_num = :a;
+                                        """)
 
         try:
-            # look for matching Forum Search Numbers in New Record List & Comments
-            if r_line.change_type not in {ChangeType.topic_inforg_comment_new, ChangeType.topic_comment_new}:
-                return
-
-            if type_of_comments == CommentsType.all:
-                comments = self.conn.execute("""
-                    SELECT
-                    comment_url, comment_text, comment_author_nickname, comment_author_link,
-                    search_forum_num, comment_num, comment_global_num
-                    FROM comments WHERE notification_sent IS NULL;
-                                             """).fetchall()
-
-            elif type_of_comments == CommentsType.inforg:
-                comments = self.conn.execute("""
-                    SELECT
-                    comment_url, comment_text, comment_author_nickname, comment_author_link,
-                    search_forum_num, comment_num, comment_global_num
-                    FROM comments WHERE notif_sent_inforg IS NULL
-                    AND LOWER(LEFT(comment_author_nickname,6))='инфорг'
-                    AND comment_author_nickname!='Инфорг кинологов';
-                                             """).fetchall()
-            else:
-                return
-
-            temp_list_of_comments = []
-            for c_line in comments:
-                # when match of Forum Numbers is found
-                if r_line.forum_search_num != c_line[4]:
-                    continue  # TODO filter in query
-                # check for empty comments
-                if not c_line[1] or c_line[1].lower().startswith('резерв'):
-                    continue
-
-                comment = Comment(
-                    url=c_line[0],
-                    text=c_line[1],
-                    author_nickname=c_line[2],
-                    author_link=c_line[3],
-                    search_forum_num=c_line[4],
-                    num=c_line[5],
-                )
-
-                # some nicknames can be like >>Белый<< which crashes html markup -> we delete symbols
-                comment.author_nickname = comment.author_nickname.replace('>', '')
-                comment.author_nickname = comment.author_nickname.replace('<', '')
-
-                # limitation for extra long messages
-                if len(comment.text) > 3500:
-                    comment.text = comment.text[:2000] + '...'
-
-                temp_list_of_comments.append(comment)
-
-            if type_of_comments == CommentsType.all:
-                r_line.comments = temp_list_of_comments
-            elif type_of_comments == CommentsType.inforg:
-                r_line.comments_inforg = temp_list_of_comments
-
-            logging.info(f'New Record enriched with Comments for {type_of_comments}')
+            comments = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
+            r_line.comments = self._get_comments_from_query_result(comments)
+            logging.info(f'New Record enriched with Comments for all')
 
         except Exception as e:
-            logging.error(f'Not able to enrich New Records with Comments for {type_of_comments}:')
+            logging.error(f'Not able to enrich New Records with Comments for all:')
             logging.exception(e)
+
+    def enrich_new_record_with_inforg_comments(self, r_line: LineInChangeLog) -> None:
+        """add the lists of new inforg comments to the New Record"""
+
+        # look for matching Forum Search Numbers in New Record List & Comments
+        if r_line.change_type not in {ChangeType.topic_inforg_comment_new, ChangeType.topic_comment_new}:
+            return
+
+        query = sqlalchemy.text("""
+            SELECT
+            comment_url, comment_text, comment_author_nickname, comment_author_link,
+            search_forum_num, comment_num, comment_global_num
+            FROM comments 
+            WHERE 
+                notif_sent_inforg IS NULL
+                AND LOWER(LEFT(comment_author_nickname,6))='инфорг'
+                AND comment_author_nickname!='Инфорг кинологов'
+                AND search_forum_num = :a;
+                                        """)
+
+        try:
+            comments = self.conn.execute(query, a=r_line.forum_search_num).fetchall()
+            r_line.comments_inforg = self._get_comments_from_query_result(comments)
+            logging.info(f'New Record enriched with Comments for inforg')
+
+        except Exception as e:
+            logging.error(f'Not able to enrich New Records with Comments for inforg:')
+            logging.exception(e)
+
+    def _get_comments_from_query_result(self, query_result: list[tuple]) -> list[Comment]:
+        temp_list_of_comments: list[Comment] = []
+
+        for c_line in query_result:
+            comment = Comment(
+                url=c_line[0],
+                text=c_line[1],
+                author_nickname=c_line[2],
+                author_link=c_line[3],
+                search_forum_num=c_line[4],
+                num=c_line[5],
+            )
+            # check for empty comments
+            if not comment.text or comment.text.lower().startswith('резерв'):
+                continue
+
+                # some nicknames can be like >>Белый<< which crashes html markup -> we delete symbols
+            comment.author_nickname = comment.author_nickname.replace('>', '')
+            comment.author_nickname = comment.author_nickname.replace('<', '')
+
+            # limitation for extra long messages
+            if len(comment.text) > 3500:
+                comment.text = comment.text[:2000] + '...'
+
+            temp_list_of_comments.append(comment)
+
+        return temp_list_of_comments
 
     def compose_com_msg_on_first_post_change(self, record: LineInChangeLog) -> None:
         """compose the common, user-independent message on search first post change"""
@@ -523,7 +529,7 @@ class LogRecordExtractor:
         """compose the common, user-independent message on ALL search comments change"""
 
         url_prefix = 'https://lizaalert.org/forum/memberlist.php?mode=viewprofile&u='
-        activity = 'мероприятию' if line.topic_type_id == 10 else 'поиску'
+        activity = 'мероприятию' if line.topic_type_id == TopicType.event else 'поиску'
 
         msg = ''
         for comment in line.comments:
@@ -564,7 +570,7 @@ class LogRecordExtractor:
 
         message = MessageNewTopic()
 
-        if topic_type_id == 10:  # new event
+        if topic_type_id == TopicType.event:
             clickable_name = f'🗓️Новое мероприятие!\n{clickable_name}'
             message.clickable_name = clickable_name
             line.message = [clickable_name, None, None]

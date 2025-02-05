@@ -549,11 +549,11 @@ class NotificationComposer:
             # TODO – is it correct that we mark comments processes for any Comments for certain search? Looks
             #  like we can mark some comments which are not yet processed at all. Probably base on change_id? To be checked
             if record.processed and not record.ignore:
-                if record.change_type == 3:
+                if record.change_type == ChangeType.topic_comment_new:
                     sql_text = sqlalchemy.text("UPDATE comments SET notification_sent = 'y' WHERE search_forum_num=:a;")
                     self.conn.execute(sql_text, a=record.forum_search_num)
 
-                elif record.change_type == 4:
+                elif record.change_type == ChangeType.topic_inforg_comment_new:
                     sql_text = sqlalchemy.text("UPDATE comments SET notif_sent_inforg = 'y' WHERE search_forum_num=:a;")
                     self.conn.execute(sql_text, a=record.forum_search_num)
                 # FIXME ^^^

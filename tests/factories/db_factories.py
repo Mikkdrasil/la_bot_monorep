@@ -97,3 +97,17 @@ class DictSearchActivityFactory(BaseFactory[db_models.DictSearchActivity]):
     pass
     # activity_id = Column(String)
     # activity_name = Column(String)
+
+
+class CommentFactory(BaseFactory[db_models.Comment]):
+    pass
+    # comment_url = Column(String)
+    # comment_text = Column(String)
+    # comment_author_nickname = Column(String)
+    # comment_author_link = Column(String)
+    # search_forum_num = Column(Integer)
+    # comment_num = Column(Integer)
+    # comment_global_num = Column(String(10))
+    # notification_sent = Column(String(1))
+    # notif_sent_staging = Column(String(1))
+    # notif_sent_inforg = Column(String(1))

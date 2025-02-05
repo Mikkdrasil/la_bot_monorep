@@ -3,7 +3,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Any
 
 WINDOW_FOR_NOTIFICATIONS_DAYS = 60
@@ -11,7 +11,7 @@ COORD_FORMAT = '{0:.5f}'
 COORD_PATTERN = r'0?[3-8]\d\.\d{1,10}[\s\w,]{0,10}[01]?[2-9]\d\.\d{1,10}'
 
 
-class TopicType(Enum):
+class TopicType(IntEnum):
     """
     SQL table 'dict_topic_types'
     """
@@ -31,7 +31,7 @@ class TopicType(Enum):
 SEARCH_TOPIC_TYPES = {0, 1, 2, 3, 4, 5}
 
 
-class ChangeType(Enum):
+class ChangeType(IntEnum):
     """
     SQL table 'dict_notif_types'
     """
@@ -50,11 +50,6 @@ class ChangeType(Enum):
     all = 30
 
 
-class CommentsType(str, Enum):
-    all = 'all'
-    inforg = 'inforg'
-
-
 @dataclass
 class Message:
     name: str = ''
@@ -67,7 +62,7 @@ class Message:
 class MessageNewTopic(Message):
     city_coords: Any = None
     hq_coords: Any = None
-    activities: Any = None
+    activities: str = ''
     managers: Any = None
     hint_on_coords: Any = None
     hint_on_something: Any = None  # FIXME
