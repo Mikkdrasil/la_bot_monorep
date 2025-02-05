@@ -16,10 +16,10 @@ class TestNotificationMaker:
     def test_generate_notifications_for_users(self, connection: Connection, dict_notif_type_status_change):
         record = LineInChangeLogFactory.build(ignore=False, change_type=ChangeType.topic_status_change, processed=False)
         user = UserFactory.build()
-        composer = NotificationMaker(connection, record)
+        composer = NotificationMaker(connection, record, [user])
 
         assert not record.processed
-        composer.generate_notifications_for_users([user], 1)
+        composer.generate_notifications_for_users(1)
         assert record.processed
 
     def test_generate_notifications_for_user_text(
@@ -27,7 +27,7 @@ class TestNotificationMaker:
     ):
         record = LineInChangeLogFactory.build(ignore=False, change_type=ChangeType.topic_status_change, processed=False)
         user = UserFactory.build()
-        composer = NotificationMaker(connection, record)
+        composer = NotificationMaker(connection, record, [user])
         mailing_id = composer.create_new_mailing_id()
 
         composer.generate_notification_for_user(mailing_id, user)
@@ -58,7 +58,7 @@ class TestNotificationMaker:
             user_latitude='55.0000',
             user_longitude='55.0000',
         )
-        composer = NotificationMaker(connection, record)
+        composer = NotificationMaker(connection, record, [user])
         mailing_id = composer.create_new_mailing_id()
 
         composer.generate_notification_for_user(mailing_id, user)
@@ -88,7 +88,7 @@ class TestNotificationMaker:
             user_latitude='55.0000',
             user_longitude='55.0000',
         )
-        composer = NotificationMaker(connection, record)
+        composer = NotificationMaker(connection, record, [user])
         mailing_id = composer.create_new_mailing_id()
 
         composer.generate_notification_for_user(mailing_id, user)

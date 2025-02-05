@@ -94,19 +94,19 @@ def create_user_notifications_from_change_log_record(
 
     # check the matrix: new update - user and initiate sending notifications
 
-    composer = NotificationMaker(conn, new_record)
-    composer.generate_notifications_for_users(list_of_users, function_id)
+    notification_maker = NotificationMaker(conn, new_record, list_of_users)
+    notification_maker.generate_notifications_for_users(function_id)
 
     analytics_iterations_finish = datetime.datetime.now()
     duration_iterations = round((analytics_iterations_finish - analytics_match_finish).total_seconds(), 2)
     logging.info(f'time: function iterations end-to-end – {duration_iterations} sec')
 
     # mark all the "new" lines in tables Change Log & Comments as "old"
-    composer.mark_new_record_as_processed(new_record)
-    composer.mark_new_comments_as_processed(new_record)
+    notification_maker.mark_new_record_as_processed()
+    notification_maker.mark_new_comments_as_processed()
 
     # final step – update statistics on how many users received notifications on new searches
-    composer.record_notification_statistics()
+    notification_maker.record_notification_statistics()
     return analytics_iterations_finish  # TODO can we move it out of this function?
 
 

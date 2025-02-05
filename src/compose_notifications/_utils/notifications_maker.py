@@ -29,12 +29,13 @@ FIB_LIST = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987]
 
 
 class NotificationMaker:
-    def __init__(self, conn: Connection, new_record: LineInChangeLog) -> None:
+    def __init__(self, conn: Connection, new_record: LineInChangeLog, list_of_users: list[User]) -> None:
         self.conn = conn
         self.stat_list_of_recipients: list[int] = []  # list of users who received notification on new search
         self.new_record = new_record
+        self.list_of_users = list_of_users
 
-    def generate_notifications_for_users(self, list_of_users: list[User], function_id: int):
+    def generate_notifications_for_users(self, function_id: int):
         """initiates a full cycle for all messages composition for all the users"""
 
         new_record = self.new_record
@@ -52,7 +53,7 @@ class NotificationMaker:
             message_for_pubsub = {'triggered_by_func_id': function_id, 'text': 'initiate notifs send out'}
             publish_to_pubsub(Topics.topic_to_send_notifications, message_for_pubsub)
 
-            for user in list_of_users:
+            for user in self.list_of_users:
                 number_of_situations_checked += 1
                 self.generate_notification_for_user(mailing_id, user)
 
@@ -340,24 +341,24 @@ class NotificationMaker:
             logging.error('Recording statistics in notification script failed' + repr(e))
             logging.exception(e)
 
-    def mark_new_record_as_processed(self, new_record: LineInChangeLog):
+    def mark_new_record_as_processed(self):
         """mark all the new records in SQL as processed, to avoid processing in the next iteration"""
 
         try:
-            if not new_record.processed:
+            if not self.new_record.processed:
                 return
-            if not new_record.ignore:
+            if not self.new_record.ignore:
                 sql_text = sqlalchemy.text("""
                     UPDATE change_log SET notification_sent = 'y' WHERE id=:a;
                                             """)
-                self.conn.execute(sql_text, a=new_record.change_log_id)
-                logging.info(f'The New Record {new_record.change_log_id} was marked as processed in PSQL')
+                self.conn.execute(sql_text, a=self.new_record.change_log_id)
+                logging.info(f'The New Record {self.new_record.change_log_id} was marked as processed in PSQL')
             else:
                 sql_text = sqlalchemy.text("""
                     UPDATE change_log SET notification_sent = 'n' WHERE id=:a;
                                             """)
-                self.conn.execute(sql_text, a=new_record.change_log_id)
-                logging.info(f'The New Record {new_record.change_log_id} was marked as IGNORED in PSQL')
+                self.conn.execute(sql_text, a=self.new_record.change_log_id)
+                logging.info(f'The New Record {self.new_record.change_log_id} was marked as IGNORED in PSQL')
 
         except Exception as e:
             # FIXME – should be a smarter way to re-process the record instead of just marking everything as processed
@@ -373,24 +374,29 @@ class NotificationMaker:
             notify_admin('ERROR: Not able to mark Updates as Processed in Change Log!')
             # FIXME ^^^
 
-    def mark_new_comments_as_processed(self, record: LineInChangeLog) -> None:
+    def mark_new_comments_as_processed(self) -> None:
         """mark in SQL table Comments all the comments that were processed at this step, basing on search_forum_id"""
 
         try:
             # TODO – is it correct that we mark comments processes for any Comments for certain search? Looks
             #  like we can mark some comments which are not yet processed at all. Probably base on change_id? To be checked
-            if record.processed and not record.ignore:
-                if record.change_type == ChangeType.topic_comment_new:
-                    sql_text = sqlalchemy.text("UPDATE comments SET notification_sent = 'y' WHERE search_forum_num=:a;")
-                    self.conn.execute(sql_text, a=record.forum_search_num)
+            if not (self.new_record.processed and not self.new_record.ignore):
+                return
+            if self.new_record.change_type == ChangeType.topic_comment_new:
+                sql_text = sqlalchemy.text("""
+                    UPDATE comments SET notification_sent = 'y' WHERE search_forum_num=:a;
+                                           """)
+                self.conn.execute(sql_text, a=self.new_record.forum_search_num)
 
-                elif record.change_type == ChangeType.topic_inforg_comment_new:
-                    sql_text = sqlalchemy.text("UPDATE comments SET notif_sent_inforg = 'y' WHERE search_forum_num=:a;")
-                    self.conn.execute(sql_text, a=record.forum_search_num)
-                # FIXME ^^^
+            elif self.new_record.change_type == ChangeType.topic_inforg_comment_new:
+                sql_text = sqlalchemy.text("""
+                    UPDATE comments SET notif_sent_inforg = 'y' WHERE search_forum_num=:a;
+                                           """)
+                self.conn.execute(sql_text, a=self.new_record.forum_search_num)
+            # FIXME ^^^
 
-                logging.info(f'The Update {record.change_log_id} with Comments that are processed and not ignored')
-                logging.info('All Comments are marked as processed')
+            logging.info(f'The Update {self.new_record.change_log_id} with Comments that are processed and not ignored')
+            logging.info('All Comments are marked as processed')
 
         except Exception as e:
             # TODO – seems a vary vague solution: to mark all
@@ -399,13 +405,13 @@ class NotificationMaker:
                 OR notification_sent = 's';
                                        """)
             self.conn.execute(sql_text)
+
             sql_text = sqlalchemy.text("""
                 UPDATE comments SET notif_sent_inforg = 'y' WHERE notif_sent_inforg is Null;
                 """)
             self.conn.execute(sql_text)
 
-            logging.info('Not able to mark Comments as Processed:')
-            logging.exception(e)
+            logging.exception('Not able to mark Comments as Processed:')
             logging.info('Due to error, all Comments are marked as processed')
             notify_admin('ERROR: Not able to mark Comments as Processed!')
 
