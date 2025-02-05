@@ -126,7 +126,7 @@ class User:
     user_in_multi_folders: bool = True
     user_corr_regions: list = None
     user_new_search_notifs: bool = None
-    role: str = None  # TODO user_role?
+    user_role: str = None
     age_periods: list = None
     radius: float = None
 

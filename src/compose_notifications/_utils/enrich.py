@@ -1,6 +1,13 @@
-import ast, math, re, sqlalchemy
-import logging
+import ast
 import datetime
+import logging
+import math
+import re
+
+import sqlalchemy
+import sqlalchemy.connectors
+import sqlalchemy.ext
+import sqlalchemy.pool
 from sqlalchemy.engine.base import Connection
 
 from _dependencies.misc import age_writer, notify_admin
@@ -144,7 +151,7 @@ def get_coords_from_list(input_list):
         return None, None
 
 
-def compose_com_msg_on_first_post_change(record: LineInChangeLog):
+def compose_com_msg_on_first_post_change(record: LineInChangeLog) -> str:
     """compose the common, user-independent message on search first post change"""
 
     message = record.new_value
@@ -413,7 +420,7 @@ def enrich_new_record_with_com_message_texts(line: LineInChangeLog) -> LineInCha
     return line
 
 
-def enrich_users_list_with_age_periods(conn, list_of_users):
+def enrich_users_list_with_age_periods(conn: sqlalchemy.engine.Connection, list_of_users):
     """add the data on Lost people age notification preferences from user_pref_age into users List"""
 
     try:
@@ -442,7 +449,7 @@ def enrich_users_list_with_age_periods(conn, list_of_users):
     return list_of_users
 
 
-def enrich_users_list_with_radius(conn, list_of_users):
+def enrich_users_list_with_radius(conn: sqlalchemy.engine.Connection, list_of_users):
     """add the data on distance notification preferences from user_pref_radius into users List"""
 
     try:

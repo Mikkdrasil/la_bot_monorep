@@ -217,7 +217,7 @@ def get_list_of_admins_and_testers(conn):
 
 
 def save_to_sql_notif_by_user(
-    conn,
+    conn: sqlalchemy.engine.Connection,
     mailing_id_,
     user_id_,
     message_,
@@ -260,7 +260,7 @@ def save_to_sql_notif_by_user(
     return None
 
 
-def get_from_sql_if_was_notified_already(conn, user_id_, message_type_, change_log_id_):
+def get_from_sql_if_was_notified_already(conn: sqlalchemy.engine.Connection, user_id_, message_type_, change_log_id_):
     """check in sql if this user was already notified re this change_log record
     works for every user during iterations over users"""
 
@@ -285,7 +285,7 @@ def get_from_sql_if_was_notified_already(conn, user_id_, message_type_, change_l
     return user_was_already_notified
 
 
-def get_from_sql_list_of_users_with_prepared_message(conn, change_log_id_):
+def get_from_sql_list_of_users_with_prepared_message(conn: sqlalchemy.engine.Connection, change_log_id_):
     """check what is the list of users for whom we already composed messages for the given change_log record"""
 
     sql_text_ = sqlalchemy.text("""
@@ -328,7 +328,7 @@ def get_the_new_group_id(conn):
     return next_id
 
 
-def process_mailing_id(conn, change_log_item, topic_id, change_type):
+def process_mailing_id(conn: sqlalchemy.engine.Connection, change_log_item, topic_id, change_type):
     """TODO"""
 
     # check if this change_log record was somehow processed
@@ -391,7 +391,7 @@ def check_if_age_requirements_met(search_ages, user_ages):
     return requirements_met
 
 
-def crop_user_list(conn, users_list_incoming, users_should_not_be_informed, record):
+def crop_user_list(conn: sqlalchemy.engine.Connection, users_list_incoming, users_should_not_be_informed, record):
     """crop user_list to only affected users"""
 
     users_list_outcome = users_list_incoming
@@ -583,7 +583,9 @@ def record_notification_statistics(conn):
     return None
 
 
-def iterate_over_all_users(conn, admins_list, new_record, list_of_users, function_id) -> LineInChangeLog:
+def iterate_over_all_users(
+    conn: sqlalchemy.engine.Connection, admins_list, new_record, list_of_users, function_id
+) -> LineInChangeLog:
     """initiates a full cycle for all messages composition for all the users"""
     global stat_list_of_recipients
 
@@ -715,7 +717,15 @@ def iterate_over_all_users(conn, admins_list, new_record, list_of_users, functio
 
                     # record into SQL table notif_by_user (not text, but coords only)
                     save_to_sql_notif_by_user(
-                        conn,mailing_id, user.user_id, None, None, 'coords', message_params, msg_group_id, change_log_id
+                        conn,
+                        mailing_id,
+                        user.user_id,
+                        None,
+                        None,
+                        'coords',
+                        message_params,
+                        msg_group_id,
+                        change_log_id,
                     )
                 if change_type == 8:
                     try:
@@ -878,7 +888,7 @@ def compose_individual_message_on_first_post_change(new_record: LineInChangeLog,
     return message
 
 
-def mark_new_record_as_processed(conn, new_record: LineInChangeLog):
+def mark_new_record_as_processed(conn: sqlalchemy.engine.Connection, new_record: LineInChangeLog):
     """mark all the new records in SQL as processed, to avoid processing in the next iteration"""
 
     try:
@@ -911,7 +921,7 @@ def mark_new_record_as_processed(conn, new_record: LineInChangeLog):
     return None
 
 
-def mark_new_comments_as_processed(conn, record):
+def mark_new_comments_as_processed(conn: sqlalchemy.engine.Connection, record):
     """mark in SQL table Comments all the comments that were processed at this step, basing on search_forum_id"""
 
     try:
@@ -950,7 +960,7 @@ def mark_new_comments_as_processed(conn, record):
 FUNC_NAME = 'compose_notifications'
 
 
-def check_if_need_compose_more(conn, function_id: int):
+def check_if_need_compose_more(conn: sqlalchemy.engine.Connection, function_id: int):
     """check if there are any notifications remained to be composed"""
 
     check = conn.execute("""SELECT search_forum_num, changed_field, new_value, id, change_type FROM change_log
@@ -988,33 +998,31 @@ def main(event, context):  # noqa
     message_from_pubsub = process_pubsub_message_v2(event)
     triggered_by_func_id = get_triggering_function(message_from_pubsub)
 
-    pool = sql_connect()
-    with pool.connect() as conn:
-        there_is_function_working_in_parallel = check_and_save_event_id(
+    there_is_function_working_in_parallel = check_and_save_event_id(
+        context,
+        'start',
+        function_id,
+        None,
+        triggered_by_func_id,
+        FUNC_NAME,
+        INTERVAL_TO_CHECK_PARALLEL_FUNCTION_SECONDS,
+    )
+    if there_is_function_working_in_parallel:
+        logging.info('function execution stopped due to parallel run with another function')
+        check_and_save_event_id(
             context,
-            'start',
+            'finish',
             function_id,
             None,
             triggered_by_func_id,
             FUNC_NAME,
             INTERVAL_TO_CHECK_PARALLEL_FUNCTION_SECONDS,
         )
-        if there_is_function_working_in_parallel:
-            logging.info('function execution stopped due to parallel run with another function')
-            check_and_save_event_id(
-                context,
-                'finish',
-                function_id,
-                None,
-                triggered_by_func_id,
-                FUNC_NAME,
-                INTERVAL_TO_CHECK_PARALLEL_FUNCTION_SECONDS,
-            )
-            logging.info('script finished')
-            conn.close()
-            pool.dispose()
-            return None
+        logging.info('script finished')
+        return
 
+    pool = sql_connect()
+    with pool.connect() as conn:
         # compose New Records List: the delta from Change log
         new_record = compose_new_records_from_change_log(conn)
 
@@ -1063,6 +1071,7 @@ def main(event, context):  # noqa
                 list_of_change_log_ids = [new_record.change_id]
             except Exception as e:  # noqa
                 logging.exception(e)
+
         check_and_save_event_id(
             context,
             'finish',
@@ -1083,7 +1092,4 @@ def main(event, context):  # noqa
 
         logging.info('script finished')
 
-        conn.close()
     pool.dispose()
-
-    return None
