@@ -4,9 +4,8 @@ from compose_notifications._utils.notif_common import ChangeType, LineInChangeLo
 from compose_notifications._utils.notifications_maker import (
     MessageComposer,
     NotificationComposer,
-    UserListFilter,
-    check_if_age_requirements_met,
 )
+from compose_notifications._utils.users_list_composer import UserListFilter, check_if_age_requirements_met
 from tests.factories import db_factories, db_models
 from tests.test_compose_notifications.factories import LineInChangeLogFactory, UserFactory
 
