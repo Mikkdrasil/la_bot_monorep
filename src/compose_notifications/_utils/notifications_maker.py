@@ -38,22 +38,20 @@ class NotificationMaker:
         CommonMessageComposer(self.new_record).compose()
 
         new_record = self.new_record
-        number_of_situations_checked = 0
+
+        # skip ignored lines which don't require a notification
+        if new_record.ignore:
+            new_record.processed = True
+            logging.info('Iterations over all Users and Updates are done (record Ignored)')
+            return
 
         try:
-            # skip ignored lines which don't require a notification
-            if new_record.ignore:
-                new_record.processed = True
-                logging.info('Iterations over all Users and Updates are done (record Ignored)')
-                return
-
             mailing_id = self.create_new_mailing_id()
 
             message_for_pubsub = {'triggered_by_func_id': function_id, 'text': 'initiate notifs send out'}
             publish_to_pubsub(Topics.topic_to_send_notifications, message_for_pubsub)
 
             for user in self.list_of_users:
-                number_of_situations_checked += 1
                 self.generate_notification_for_user(mailing_id, user)
 
             # mark this line as all-processed
@@ -107,7 +105,6 @@ class NotificationMaker:
     ) -> None:
         change_type = self.new_record.change_type
         topic_type_id = self.new_record.topic_type_id
-        
 
         # TODO move one level upper
         # and think: we really need it?

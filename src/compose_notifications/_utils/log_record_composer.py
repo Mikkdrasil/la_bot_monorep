@@ -195,39 +195,51 @@ class LogRecordExtractor:
             logging.info(f'TEMP – STATUS_OLD = {r_line.status}, STATUS_NEW = {r_line.new_status}')
             logging.info(f'TEMP – TOPIC_TYPE = {r_line.topic_type_id}')
 
-            # case: when new search's status is already not "Ищем" – to be ignored
-            if r_line.status != 'Ищем' and r_line.change_type in {
-                ChangeType.topic_new,
-                ChangeType.topic_first_post_change,
-            }:
-                r_line.ignore = True
-
-            # limit notification sending only for searches started 60 days ago
-            # 60 days – is a compromise and can be reviewed if community votes for another setting
-            try:
-                latest_when_alert = r_line.start_time + datetime.timedelta(days=WINDOW_FOR_NOTIFICATIONS_DAYS)
-                if latest_when_alert < datetime.datetime.now():
-                    FORUM_FOLDERS_OF_SAMARA = {333, 305, 334, 306, 190}
-                    if r_line.forum_folder not in FORUM_FOLDERS_OF_SAMARA:
-                        r_line.ignore = True
-
-                        # DEBUG purposes only
-                        notify_admin(
-                            f'ignoring old search upd {r_line.forum_search_num} with start time {r_line.start_time}'
-                        )
-                    # FIXME – 03.12.2023 – checking that Samara is not filtered by 60 days
-                    else:
-                        notify_admin(f'☀️ SAMARA >60 {r_line.link}')
-                    # FIXME ^^^
-
-            except:  # noqa
-                pass
+            self._set_ignorance_mark(r_line)
 
             logging.info('New Record enriched from Searches')
 
         except Exception as e:
             logging.error('Not able to enrich New Records from Searches:')
             logging.exception(e)
+
+    def _set_ignorance_mark(self, r_line: LineInChangeLog) -> None:
+        """mark line as ignored in some cases"""
+
+        if r_line.status != 'Ищем' and r_line.change_type in {
+            ChangeType.topic_new,
+            ChangeType.topic_first_post_change,
+        }:
+            # case: when new search's status is already not "Ищем" – to be ignored
+            r_line.ignore = True
+
+        if r_line.change_type == ChangeType.topic_new:
+            # we do not notify users on "new" topics appeared >=2 days ago:
+            days_since_topic_start = (datetime.datetime.now() - r_line.start_time).days
+
+            if days_since_topic_start >= 2:
+                r_line.ignore = True
+
+        try:
+            # limit notification sending only for searches started 60 days ago
+            # 60 days – is a compromise and can be reviewed if community votes for another setting
+            latest_when_alert = r_line.start_time + datetime.timedelta(days=WINDOW_FOR_NOTIFICATIONS_DAYS)
+            if latest_when_alert < datetime.datetime.now():
+                FORUM_FOLDERS_OF_SAMARA = {333, 305, 334, 306, 190}
+                if r_line.forum_folder not in FORUM_FOLDERS_OF_SAMARA:
+                    r_line.ignore = True
+
+                    # DEBUG purposes only
+                    notify_admin(
+                        f'ignoring old search upd {r_line.forum_search_num} with start time {r_line.start_time}'
+                    )
+                    # FIXME – 03.12.2023 – checking that Samara is not filtered by 60 days
+                else:
+                    notify_admin(f'☀️ SAMARA >60 {r_line.link}')
+                    # FIXME ^^^
+
+        except:  # noqa
+            pass
 
     def enrich_new_record_with_search_activities(self, r_line: LineInChangeLog) -> None:
         """add the lists of current searches' activities to New Record"""

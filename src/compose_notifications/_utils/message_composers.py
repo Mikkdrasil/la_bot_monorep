@@ -238,30 +238,12 @@ class CommonMessageComposer:
     def _compose_com_msg_on_new_topic(self) -> None:
         """compose the common, user-independent message on new topic (search, event)"""
 
-        # TODO check line.ignore!
-        #
         line = self.line
 
-        start = line.start_time
         activities = line.activities
         managers = line.managers
         clickable_name = line.clickable_name
         topic_type_id = line.topic_type_id
-
-        now = datetime.datetime.now()
-        days_since_topic_start = (now - start).days
-
-        # FIXME – temp limitation for only topics - cuz we don't want to filter event.
-        #  Once events messaging will go smooth, this limitation to be removed.
-        #  03.12.2023 – Removed to check
-        # if topic_type_id in SEARCH_TOPIC_TYPES:
-        # FIXME ^^^
-
-        if days_since_topic_start >= 2:  # we do not notify users on "new" topics appeared >=2 days ago:
-            line.message_common_part = [None, None, None]  # 1 - person, 2 - activities, 3 - managers
-            line.message_object = None
-            line.ignore = True
-            return
 
         message = MessageNewTopic()
 
@@ -270,7 +252,6 @@ class CommonMessageComposer:
             message.clickable_name = clickable_name
             line.message_common_part = [clickable_name, None, None]
             line.message_object = message
-            line.ignore = False
 
         # 1. List of activities – user-independent
         msg_1 = ''
@@ -304,7 +285,6 @@ class CommonMessageComposer:
         logging.info('msg 2 + msg 1 + msg 3: ' + str(msg_2) + ' // ' + str(msg_1) + ' // ' + str(msg_3))
         line.message_common_part = [msg_2, msg_1, msg_3]  # 1 - person, 2 - activities, 3 - managers
         line.message_object = message
-        line.ignore = False
 
     def _compose_com_msg_on_status_change(self) -> None:
         """compose the common, user-independent message on search status change"""
@@ -340,7 +320,6 @@ class CommonMessageComposer:
 class PersonalMessageComposer:
     def __init__(self, new_record: LineInChangeLog):
         self.new_record = new_record
-        
 
     def compose_message_for_user(self, user: User) -> str:
         change_type = self.new_record.change_type
