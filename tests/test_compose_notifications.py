@@ -12,6 +12,7 @@ import compose_notifications._utils.enrich
 import compose_notifications._utils.notif_common
 from _dependencies.commons import sqlalchemy_get_pool
 from compose_notifications import main
+from compose_notifications._utils.notif_common import get_coords_from_list
 from compose_notifications.main import LineInChangeLog
 from tests.common import get_event_with_data
 from tests.factories import db_models
@@ -156,3 +157,9 @@ def test_get_change_log_record_by_id(
 
     assert record.title == search_record.forum_search_title
     assert record.city_locations == search_record.city_locations
+
+
+def test_get_coords_from_list():
+    coords_str = '[[54.683253050000005, 55.98561157727167]]'
+    c1, c2 = get_coords_from_list(coords_str)
+    assert c1, c2

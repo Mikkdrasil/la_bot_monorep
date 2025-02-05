@@ -1,7 +1,6 @@
 import ast
 import datetime
 import logging
-import math
 import re
 
 import sqlalchemy
@@ -11,15 +10,23 @@ import sqlalchemy.pool
 from sqlalchemy.engine.base import Connection
 
 from _dependencies.misc import age_writer, notify_admin
+from compose_notifications._utils.notif_common import (
+    add_tel_link,
+    define_dist_and_dir_to_search,
+    define_family_name,
+    get_coords_from_list,
+)
 
 from .notif_common import (
     COORD_FORMAT,
     COORD_PATTERN,
+    SEARCH_TOPIC_TYPES,
     WINDOW_FOR_NOTIFICATIONS_DAYS,
     Comment,
+    CommentsType,
     LineInChangeLog,
     MessageNewTopic,
-    User,
+    NotifType,
 )
 
 
@@ -45,7 +52,7 @@ def enrich_new_record_with_emoji(line: LineInChangeLog) -> None:
 def enrich_new_record_with_clickable_name(line: LineInChangeLog) -> None:
     """add clickable name to the record"""
 
-    if line.topic_type_id in {0, 1, 2, 3, 4, 5}:  # if it's search
+    if line.topic_type_id in SEARCH_TOPIC_TYPES:  # if it's search
         if line.display_name:
             line.clickable_name = f'<a href="{line.link}">{line.display_name}</a>'
         else:
@@ -53,99 +60,10 @@ def enrich_new_record_with_clickable_name(line: LineInChangeLog) -> None:
                 name = line.name
             else:
                 name = 'БВП'
-            age_info = f' {line.age_wording}' if (name[0].isupper() and line.age and line.age != 0) else ''
+            age_info = f' {line.age_wording}' if (name[0].isupper() and line.age) else ''
             line.clickable_name = f'<a href="{line.link}">{name}{age_info}</a>'
     else:  # if it's event or something else
         line.clickable_name = f'<a href="{line.link}">{line.title}</a>'
-
-
-def define_dist_and_dir_to_search(search_lat: str, search_lon: str, user_let: float, user_lon: float):
-    """define direction & distance from user's home coordinates to search coordinates"""
-
-    def calc_bearing(lat_2, lon_2, lat_1, lon_1):
-        d_lon_ = lon_2 - lon_1
-        x = math.cos(math.radians(lat_2)) * math.sin(math.radians(d_lon_))
-        y = math.cos(math.radians(lat_1)) * math.sin(math.radians(lat_2)) - math.sin(math.radians(lat_1)) * math.cos(
-            math.radians(lat_2)
-        ) * math.cos(math.radians(d_lon_))
-        bearing = math.atan2(x, y)  # used to determine the quadrant
-        bearing = math.degrees(bearing)
-
-        return bearing
-
-    def calc_direction(lat_1, lon_1, lat_2, lon_2):
-        points = [
-            '&#8593;&#xFE0E;',
-            '&#x2197;&#xFE0F;',
-            '&#8594;&#xFE0E;',
-            '&#8600;&#xFE0E;',
-            '&#8595;&#xFE0E;',
-            '&#8601;&#xFE0E;',
-            '&#8592;&#xFE0E;',
-            '&#8598;&#xFE0E;',
-        ]
-        bearing = calc_bearing(lat_1, lon_1, lat_2, lon_2)
-        bearing += 22.5
-        bearing = bearing % 360
-        bearing = int(bearing / 45)  # values 0 to 7
-        nsew = points[bearing]
-
-        return nsew
-
-    earth_radius = 6373.0  # radius of the Earth
-
-    # coordinates in radians
-    lat1 = math.radians(float(search_lat))
-    lon1 = math.radians(float(search_lon))
-    lat2 = math.radians(float(user_let))
-    lon2 = math.radians(float(user_lon))
-
-    # change in coordinates
-    d_lon = lon2 - lon1
-
-    d_lat = lat2 - lat1
-
-    # Haversine formula
-    a = math.sin(d_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(d_lon / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    distance = earth_radius * c
-    dist = round(distance, 1)
-
-    # define direction
-    direction = calc_direction(lat1, lon1, lat2, lon2)
-
-    return dist, direction
-
-
-def get_coords_from_list(input_list):
-    """get the list of coords [lat, lon] for the input list of strings"""
-
-    if not input_list:
-        return None, None
-
-    coords_in_text = []
-
-    for line in input_list:
-        coords_in_text += re.findall(COORD_PATTERN, line)
-
-    if not (coords_in_text and len(coords_in_text) == 1):
-        return None, None
-
-    coords_as_text = coords_in_text[0]
-    coords_as_list = re.split(r'(?<=\d)[\s,]+(?=\d)', coords_as_text)
-
-    if len(coords_as_list) != 2:
-        return None, None
-
-    try:
-        got_lat = COORD_FORMAT.format(float(coords_as_list[0]))
-        got_lon = COORD_FORMAT.format(float(coords_as_list[1]))
-        return got_lat, got_lon
-
-    except Exception as e:  # noqa
-        logging.exception(e)
-        return None, None
 
 
 def compose_com_msg_on_first_post_change(record: LineInChangeLog) -> None:
@@ -209,9 +127,10 @@ def compose_com_msg_on_first_post_change(record: LineInChangeLog) -> None:
             coord_change_phrase = f'\n\nКоординаты сместились на ~{int(distance * 1000)} метров {direction}'
 
     if not message:
-        return ''
+        record.message = ''
+        return
 
-    if type_id in {0, 1, 2, 3, 4, 5}:
+    if type_id in SEARCH_TOPIC_TYPES:
         resulting_message = (
             f'{record.topic_emoji}🔀Изменения в первом посте по {clickable_name}{region}:\n\n{message}'
             f'{coord_change_phrase}'
@@ -270,29 +189,6 @@ def compose_com_msg_on_new_comments(line: LineInChangeLog) -> None:
     line.message = msg, None  # TODO ???
 
 
-def add_tel_link(incoming_text: str, modifier: str = 'all') -> str:
-    """check is text contains phone number and replaces it with clickable version, also removes [tel] tags"""
-
-    outcome_text = None
-
-    # Modifier for all users
-    if modifier == 'all':
-        outcome_text = incoming_text
-        nums = re.findall(r'(?:\+7|7|8)\s?[\s\-(]?\s?\d{3}[\s\-)]?\s?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', incoming_text)
-        for num in nums:
-            outcome_text = outcome_text.replace(num, '<code>' + str(num) + '</code>')
-
-        phpbb_tags_to_delete = {'[tel]', '[/tel]'}
-        for tag in phpbb_tags_to_delete:
-            outcome_text = outcome_text.replace(tag, '', 5)
-
-    # Modifier for Admin
-    else:
-        pass
-
-    return outcome_text
-
-
 def compose_com_msg_on_new_topic(line: LineInChangeLog) -> None:
     """compose the common, user-independent message on new topic (search, event)"""
 
@@ -302,20 +198,19 @@ def compose_com_msg_on_new_topic(line: LineInChangeLog) -> None:
     clickable_name = line.clickable_name
     topic_type_id = line.topic_type_id
 
-    line_ignore = None
     now = datetime.datetime.now()
     days_since_topic_start = (now - start).days
 
     # FIXME – temp limitation for only topics - cuz we don't want to filter event.
     #  Once events messaging will go smooth, this limitation to be removed.
     #  03.12.2023 – Removed to check
-    # if topic_type_id in {0, 1, 2, 3, 4, 5}:
+    # if topic_type_id in SEARCH_TOPIC_TYPES:
     # FIXME ^^^
 
     if days_since_topic_start >= 2:  # we do not notify users on "new" topics appeared >=2 days ago:
         line.message = [None, None, None]  # 1 - person, 2 - activities, 3 - managers
         line.message_object = None
-        line.ignore = 'y'  # topic to be ignored
+        line.ignore = True
         return
 
     message = MessageNewTopic()
@@ -325,7 +220,7 @@ def compose_com_msg_on_new_topic(line: LineInChangeLog) -> None:
         message.clickable_name = clickable_name
         line.message = [clickable_name, None, None]
         line.message_object = message
-        line.ignore = line_ignore
+        line.ignore = False
 
     # 1. List of activities – user-independent
     msg_1 = ''
@@ -359,7 +254,7 @@ def compose_com_msg_on_new_topic(line: LineInChangeLog) -> None:
     logging.info('msg 2 + msg 1 + msg 3: ' + str(msg_2) + ' // ' + str(msg_1) + ' // ' + str(msg_3))
     line.message = [msg_2, msg_1, msg_3]  # 1 - person, 2 - activities, 3 - managers
     line.message_object = message
-    line.ignore = line_ignore
+    line.ignore = False
 
 
 def compose_com_msg_on_status_change(line: LineInChangeLog) -> None:
@@ -398,17 +293,17 @@ def enrich_new_record_with_com_message_texts(line: LineInChangeLog) -> None:
     try:
         last_line = line
 
-        if line.change_type == 0:  # new topic: new search, new event
+        if line.change_type == NotifType.topic_new:
             compose_com_msg_on_new_topic(line)
-        elif line.change_type == 1 and line.topic_type_id in {0, 1, 2, 3, 4, 5}:  # status change for search:
+        elif line.change_type == NotifType.topic_status_change and line.topic_type_id in SEARCH_TOPIC_TYPES:
             compose_com_msg_on_status_change(line)
-        elif line.change_type == 2:  # 'title_change':
+        elif line.change_type == NotifType.topic_title_change:
             compose_com_msg_on_title_change(line)
-        elif line.change_type == 3:  # 'replies_num_change':
+        elif line.change_type == NotifType.topic_comment_new:
             compose_com_msg_on_new_comments(line)
-        elif line.change_type == 4:  # 'inforg_replies':
+        elif line.change_type == NotifType.topic_inforg_comment_new:
             compose_com_msg_on_inforg_comments(line)
-        elif line.change_type == 8:  # first_post_change
+        elif line.change_type == NotifType.topic_first_post_change:
             compose_com_msg_on_first_post_change(line)
 
         logging.info('New Record enriched with common Message Text')
@@ -417,87 +312,6 @@ def enrich_new_record_with_com_message_texts(line: LineInChangeLog) -> None:
         logging.error('Not able to enrich New Record with common Message Texts:' + str(e))
         logging.exception(e)
         logging.info('FOR DEBUG OF ERROR – line is: ' + str(last_line))
-
-
-def enrich_users_list_with_age_periods(conn: sqlalchemy.engine.Connection, list_of_users: list[User]) -> None:
-    """add the data on Lost people age notification preferences from user_pref_age into users List"""
-
-    try:
-        notif_prefs = conn.execute("""SELECT user_id, period_min, period_max FROM user_pref_age;""").fetchall()
-
-        if not notif_prefs:
-            return
-
-        number_of_enrichments_old = 0
-        number_of_enrichments = 0
-        for np_line in notif_prefs:
-            new_period = [np_line[1], np_line[2]]
-
-            for u_line in list_of_users:
-                if u_line.user_id == np_line[0]:
-                    u_line.age_periods.append(new_period)
-                    number_of_enrichments += 1
-
-        logging.info(f'Users List enriched with Age Prefs, OLD num of enrichments is {number_of_enrichments_old}')
-        logging.info(f'Users List enriched with Age Prefs, num of enrichments is {number_of_enrichments}')
-
-    except Exception as e:
-        logging.info('Not able to enrich Users List with Age Prefs')
-        logging.exception(e)
-
-
-def enrich_users_list_with_radius(conn: sqlalchemy.engine.Connection, list_of_users: list[User]) -> None:
-    """add the data on distance notification preferences from user_pref_radius into users List"""
-
-    try:
-        notif_prefs = conn.execute("""SELECT user_id, radius FROM user_pref_radius;""").fetchall()
-
-        if not notif_prefs:
-            return None
-
-        number_of_enrichments = 0
-        for np_line in notif_prefs:
-            for u_line in list_of_users:
-                if u_line.user_id == np_line[0]:
-                    u_line.radius = int(round(np_line[1], 0))
-                    number_of_enrichments += 1
-                    print(f'TEMP - RADIUS user_id = {u_line.user_id}, radius = {u_line.radius}')
-
-        logging.info(f'Users List enriched with Radius, num of enrichments is {number_of_enrichments}')
-
-    except Exception as e:
-        logging.info('Not able to enrich Users List with Radius')
-        logging.exception(e)
-
-
-def define_family_name(title_string: str, predefined_fam_name: str | None) -> str:
-    """define family name if it's not available as A SEPARATE FIELD in Searches table"""
-
-    # if family name is already defined
-    if predefined_fam_name:
-        fam_name = predefined_fam_name
-
-    # if family name needs to be defined
-    else:
-        string_by_word = title_string.split()
-        # exception case: when Family Name is third word
-        # it happens when first two either Найден Жив or Найден Погиб with different word forms
-        if string_by_word[0][0:4].lower() == 'найд':
-            fam_name = string_by_word[2]
-
-        # case when "Поиск приостановлен"
-        elif string_by_word[1][0:8].lower() == 'приостан':
-            fam_name = string_by_word[2]
-
-        # case when "Поиск остановлен"
-        elif string_by_word[1][0:8].lower() == 'остановл':
-            fam_name = string_by_word[2]
-
-        # all the other cases
-        else:
-            fam_name = string_by_word[1]
-
-    return fam_name
 
 
 def enrich_new_record_from_searches(conn: Connection, r_line: LineInChangeLog) -> None:
@@ -562,14 +376,14 @@ def enrich_new_record_from_searches(conn: Connection, r_line: LineInChangeLog) -
 
         # case: when new search's status is already not "Ищем" – to be ignored
         if r_line.status != 'Ищем' and r_line.change_type in {0, 8}:  # "new_search" & "first_post_change":
-            r_line.ignore = 'y'
+            r_line.ignore = True
 
         # limit notification sending only for searches started 60 days ago
         # 60 days – is a compromise and can be reviewed if community votes for another setting
         try:
             latest_when_alert = r_line.start_time + datetime.timedelta(days=WINDOW_FOR_NOTIFICATIONS_DAYS)
             if latest_when_alert < datetime.datetime.now() and r_line.forum_folder not in {333, 305, 334, 306, 190}:
-                r_line.ignore = 'y'
+                r_line.ignore = True
 
                 # DEBUG purposes only
                 notify_admin(f'ignoring old search upd {r_line.forum_search_num} with start time {r_line.start_time}')
@@ -637,17 +451,21 @@ def enrich_new_record_with_managers(conn: Connection, r_line: LineInChangeLog) -
         logging.exception(e)
 
 
-def enrich_new_record_with_comments(conn: Connection, type_of_comments, r_line: LineInChangeLog) -> None:
+def enrich_new_record_with_comments(conn: Connection, type_of_comments: CommentsType, r_line: LineInChangeLog) -> None:
     """add the lists of new comments + new inforg comments to the New Record"""
 
     try:
-        if type_of_comments == 'all':
+        # look for matching Forum Search Numbers in New Record List & Comments
+        if r_line.change_type not in {NotifType.topic_inforg_comment_new, NotifType.topic_comment_new}:
+            return
+
+        if type_of_comments == CommentsType.all:
             comments = conn.execute("""SELECT
                                           comment_url, comment_text, comment_author_nickname, comment_author_link,
                                           search_forum_num, comment_num, comment_global_num
                                        FROM comments WHERE notification_sent IS NULL;""").fetchall()
 
-        elif type_of_comments == 'inforg':
+        elif type_of_comments == CommentsType.inforg:
             comments = conn.execute("""SELECT
                                         comment_url, comment_text, comment_author_nickname, comment_author_link,
                                         search_forum_num, comment_num, comment_global_num
@@ -655,41 +473,40 @@ def enrich_new_record_with_comments(conn: Connection, type_of_comments, r_line: 
                                     AND LOWER(LEFT(comment_author_nickname,6))='инфорг'
                                     AND comment_author_nickname!='Инфорг кинологов';""").fetchall()
         else:
-            comments = None
+            return
 
-        # look for matching Forum Search Numbers in New Record List & Comments
-        if r_line.change_type in {3, 4}:  # {'replies_num_change', 'inforg_replies'}:
-            temp_list_of_comments = []
-            for c_line in comments:
-                # when match of Forum Numbers is found
-                if r_line.forum_search_num == c_line[4]:
-                    # check for empty comments
-                    if c_line[1] and c_line[1][0:6].lower() != 'резерв':
-                        comment = Comment()
-                        comment.url = c_line[0]
-                        comment.text = c_line[1]
+        temp_list_of_comments = []
+        for c_line in comments:
+            # when match of Forum Numbers is found
+            if r_line.forum_search_num != c_line[4]:
+                continue  # TODO filter in query
+            # check for empty comments
+            if not c_line[1] or c_line[1].lower().startswith('резерв'):
+                continue
 
-                        # limitation for extra long messages
-                        if len(comment.text) > 3500:
-                            comment.text = comment.text[:2000] + '...'
+            comment = Comment(
+                url=c_line[0],
+                text=c_line[1],
+                author_nickname=c_line[2],
+                author_link=c_line[3],
+                search_forum_num=c_line[4],
+                num=c_line[5],
+            )
 
-                        comment.author_link = c_line[3]
-                        comment.search_forum_num = c_line[4]
-                        comment.num = c_line[5]
+            # some nicknames can be like >>Белый<< which crashes html markup -> we delete symbols
+            comment.author_nickname = comment.author_nickname.replace('>', '')
+            comment.author_nickname = comment.author_nickname.replace('<', '')
 
-                        # some nicknames can be like >>Белый<< which crashes html markup -> we delete symbols
-                        comment.author_nickname = c_line[2]
-                        if comment.author_nickname.find('>') > -1:
-                            comment.author_nickname = comment.author_nickname.replace('>', '')
-                        if comment.author_nickname.find('<') > -1:
-                            comment.author_nickname = comment.author_nickname.replace('<', '')
+            # limitation for extra long messages
+            if len(comment.text) > 3500:
+                comment.text = comment.text[:2000] + '...'
 
-                        temp_list_of_comments.append(comment)
+            temp_list_of_comments.append(comment)
 
-            if type_of_comments == 'all':
-                r_line.comments = temp_list_of_comments
-            elif type_of_comments == 'inforg':
-                r_line.comments_inforg = temp_list_of_comments
+        if type_of_comments == CommentsType.all:
+            r_line.comments = temp_list_of_comments
+        elif type_of_comments == CommentsType.inforg:
+            r_line.comments_inforg = temp_list_of_comments
 
         logging.info(f'New Record enriched with Comments for {type_of_comments}')
 

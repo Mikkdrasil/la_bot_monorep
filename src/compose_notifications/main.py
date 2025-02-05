@@ -18,7 +18,6 @@ from _dependencies.misc import (
 )
 
 from ._utils.enrich import (
-    define_dist_and_dir_to_search,
     enrich_new_record_from_searches,
     enrich_new_record_with_clickable_name,
     enrich_new_record_with_com_message_texts,
@@ -26,10 +25,15 @@ from ._utils.enrich import (
     enrich_new_record_with_emoji,
     enrich_new_record_with_managers,
     enrich_new_record_with_search_activities,
-    enrich_users_list_with_age_periods,
-    enrich_users_list_with_radius,
 )
-from ._utils.notif_common import COORD_FORMAT, LineInChangeLog, User
+from ._utils.notif_common import (
+    COORD_FORMAT,
+    SEARCH_TOPIC_TYPES,
+    CommentsType,
+    LineInChangeLog,
+    User,
+    define_dist_and_dir_to_search,
+)
 
 setup_google_logging()
 
@@ -46,7 +50,7 @@ def sql_connect() -> sqlalchemy.engine.Engine:
     return sqlalchemy_get_pool(5, 60)
 
 
-def select_first_record_from_change_log(conn: Connection, record_id: int | None = None) -> LineInChangeLog:
+def select_first_record_from_change_log(conn: Connection, record_id: int | None = None) -> LineInChangeLog | None:
     """compose the New Records list of the unique New Records in Change Log: one Record = One line in Change Log"""
 
     query = sqlalchemy.text(f"""
@@ -81,12 +85,13 @@ def select_first_record_from_change_log(conn: Connection, record_id: int | None 
 
     logging.info(f'new record is {one_line_in_change_log}')
 
-    new_record = LineInChangeLog()
-    new_record.forum_search_num = one_line_in_change_log[0]
-    new_record.changed_field = one_line_in_change_log[1]
-    new_record.new_value = one_line_in_change_log[2]
-    new_record.change_id = one_line_in_change_log[3]
-    new_record.change_type = one_line_in_change_log[4]
+    new_record = LineInChangeLog(
+        forum_search_num=one_line_in_change_log[0],
+        changed_field=one_line_in_change_log[1],
+        new_value=one_line_in_change_log[2],
+        change_id=one_line_in_change_log[3],
+        change_type=one_line_in_change_log[4],
+    )
 
     # TODO – there was a filtering for duplication: Inforg comments vs All Comments, but after restructuring
     #  of the scrip tech solution stopped working. The new filtering solution to be developed
@@ -200,6 +205,9 @@ def compose_users_list_from_users(conn: Connection, new_record: LineInChangeLog)
 
         logging.info('User List composed')
 
+        enrich_users_list_with_age_periods(conn, list_of_users)
+        enrich_users_list_with_radius(conn, list_of_users)
+
     except Exception as e:
         logging.error('Not able to compose Users List: ' + repr(e))
         logging.exception(e)
@@ -208,7 +216,10 @@ def compose_users_list_from_users(conn: Connection, new_record: LineInChangeLog)
 
 
 def get_list_of_admins_and_testers(conn: Connection) -> tuple[list[int], list[int]]:
-    """get the list of users with admin & testers roles from PSQL"""
+    """
+    get the list of users with admin & testers roles from PSQL
+    for debug only
+    """
 
     list_of_admins = []
     list_of_testers = []
@@ -441,7 +452,7 @@ def crop_user_list(
         users_list_outcome = temp_user_list
 
     # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
-    temp_user_list = []
+    temp_user_list: list[User] = []
     if not (record.age_min or record.age_max):
         logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
         return users_list_outcome
@@ -601,8 +612,8 @@ def record_notification_statistics(conn: sqlalchemy.engine.Connection) -> None:
         logging.exception(e)
 
 
-def iterate_over_all_users(
-    conn: sqlalchemy.engine.Connection, admins_list, new_record: LineInChangeLog, list_of_users: list[User], function_id
+def generate_notifications_for_users(
+    conn: Connection, new_record: LineInChangeLog, list_of_users: list[User], function_id: int
 ):
     """initiates a full cycle for all messages composition for all the users"""
     global stat_list_of_recipients
@@ -613,8 +624,8 @@ def iterate_over_all_users(
 
     try:
         # skip ignored lines which don't require a notification
-        if new_record.ignore == 'y':
-            new_record.processed = 'yes'
+        if new_record.ignore:
+            new_record.processed = True
             logging.info('Iterations over all Users and Updates are done (record Ignored)')
             return
 
@@ -633,7 +644,7 @@ def iterate_over_all_users(
 
         for user in list_of_users:
             number_of_situations_checked += 1
-            iterate_users_generate_one_notification(
+            message_was_generated = generate_notification_for_user(
                 conn,
                 new_record,
                 number_of_messages_sent,
@@ -642,9 +653,10 @@ def iterate_over_all_users(
                 mailing_id,
                 user,
             )
+            number_of_messages_sent += int(message_was_generated)
 
         # mark this line as all-processed
-        new_record.processed = 'yes'
+        new_record.processed = True
         logging.info('Iterations over all Users and Updates are done')
 
     except Exception as e1:
@@ -652,7 +664,7 @@ def iterate_over_all_users(
         logging.exception(e1)
 
 
-def iterate_users_generate_one_notification(
+def generate_notification_for_user(
     conn: sqlalchemy.engine.Connection,
     new_record: LineInChangeLog,
     number_of_messages_sent,
@@ -660,7 +672,7 @@ def iterate_users_generate_one_notification(
     this_record_was_processed_already,
     mailing_id,
     user: User,
-):
+) -> bool:
     change_type = new_record.change_type
     change_log_id = new_record.change_id
 
@@ -668,7 +680,7 @@ def iterate_users_generate_one_notification(
     s_lon = new_record.search_longitude
     topic_type_id = new_record.topic_type_id
     region_to_show = new_record.region if user.user_in_multi_folders else None
-    message = ''
+    user_message = ''
 
     # define if user received this message already
     if this_record_was_processed_already:
@@ -681,22 +693,20 @@ def iterate_users_generate_one_notification(
             logging.info('this user is NOT in the list of non-notifiers')
 
         if this_user_was_notified:
-            return
+            return False
 
     # start composing individual messages (specific user on specific situation)
-    message = _compose_message(new_record, user, region_to_show)
-    if not message:
-        return
+    user_message = compose_message_for_user(new_record, user, region_to_show)
+    if not user_message:
+        return False
 
     # TODO: to delete msg_group at all ?
     # messages followed by coordinates (sendMessage + sendLocation) have same group
     msg_group_id = get_the_new_group_id(conn) if change_type in {0, 8} else None
     # not None for new_search, field_trips_new, field_trips_change,  coord_change
 
-    number_of_messages_sent += 1  # TODO move out;
-
     # TODO: make text more compact within 50 symbols
-    message_without_html = re.sub(CLEANER_RE, '', message)
+    message_without_html = re.sub(CLEANER_RE, '', user_message)
 
     message_params = {'parse_mode': 'HTML', 'disable_web_page_preview': 'True'}
 
@@ -710,7 +720,7 @@ def iterate_users_generate_one_notification(
         conn,
         mailing_id,
         user.user_id,
-        message,
+        user_message,
         message_without_html,
         'text',
         message_params,
@@ -719,11 +729,11 @@ def iterate_users_generate_one_notification(
     )
 
     # for user tips in "new search" notifs – to increase sent messages counter
-    if change_type == 0 and topic_type_id in {0, 1, 2, 3, 4, 5}:  # 'new_search':
+    if change_type == 0 and topic_type_id in SEARCH_TOPIC_TYPES:  # 'new_search':
         stat_list_of_recipients.append(user.user_id)
 
         # save to SQL the sendLocation notification for "new search"
-    if change_type in {0} and topic_type_id in {0, 1, 2, 3, 4, 5} and s_lat and s_lon:
+    if change_type in {0} and topic_type_id in SEARCH_TOPIC_TYPES and s_lat and s_lon:
         # 'new_search',
         message_params = {'latitude': s_lat, 'longitude': s_lon}
 
@@ -741,11 +751,11 @@ def iterate_users_generate_one_notification(
         )
     elif change_type == 8:
         try:
-            list_of_coords = re.findall(r'<code>', message)
+            list_of_coords = re.findall(r'<code>', user_message)
             if list_of_coords and len(list_of_coords) == 1:
                 # that would mean that there's only 1 set of new coordinates and hence we can
                 # send the dedicated sendLocation message
-                both_coordinates = re.search(r'(?<=<code>).{5,100}(?=</code>)', message).group()
+                both_coordinates = re.search(r'(?<=<code>).{5,100}(?=</code>)', user_message).group()
                 if both_coordinates:
                     new_lat = re.search(r'^[\d.]{2,12}(?=\D)', both_coordinates).group()
                     new_lon = re.search(r'(?<=\D)[\d.]{2,12}$', both_coordinates).group()
@@ -765,17 +775,19 @@ def iterate_users_generate_one_notification(
             logging.info('exception happened')
             logging.exception(ee)
 
+    return True
 
-def _compose_message(new_record: LineInChangeLog, user: User, region_to_show):
+
+def compose_message_for_user(new_record: LineInChangeLog, user: User, region_to_show) -> str:
     change_type = new_record.change_type
     topic_type_id = new_record.topic_type_id
     if change_type == 0:  # new topic: new search, new event
-        if topic_type_id in {0, 1, 2, 3, 4, 5}:  # if it's a new search
+        if topic_type_id in SEARCH_TOPIC_TYPES:  # if it's a new search
             message = compose_individual_message_on_new_search(new_record, user, region_to_show)
         else:  # new event
             message = new_record.message[0]
 
-    elif change_type == 1 and topic_type_id in {0, 1, 2, 3, 4, 5}:  # search status change
+    elif change_type == 1 and topic_type_id in SEARCH_TOPIC_TYPES:  # search status change
         message = new_record.message[0]
         if user.user_in_multi_folders and new_record.message[1]:
             message += new_record.message[1]
@@ -897,20 +909,20 @@ def compose_individual_message_on_new_search(new_record: LineInChangeLog, user: 
                 )
 
     # TODO - yet not implemented new message template
-    obj = new_record.message_object
-    final_message = f"""{new_record.topic_emoji}Новый поиск{region_wording}!\n
-                        {obj.activities}\n\n
-                        {obj.clickable_name}\n\n
-                        {place_link}\n
-                        {clickable_coords}\n\n
-                        {obj.managers}\n\n
-                        {tip_on_click_to_copy}\n\n
-                        {tip_on_home_coords}"""
+    # obj = new_record.message_object
+    # final_message = f"""{new_record.topic_emoji}Новый поиск{region_wording}!\n
+    #                     {obj.activities}\n\n
+    #                     {obj.clickable_name}\n\n
+    #                     {place_link}\n
+    #                     {clickable_coords}\n\n
+    #                     {obj.managers}\n\n
+    #                     {tip_on_click_to_copy}\n\n
+    #                     {tip_on_home_coords}"""
 
-    final_message = re.sub(r'\s{3,}', '\n\n', final_message)  # clean excessive blank lines
-    final_message = re.sub(r'\s*$', '', final_message)  # clean blank symbols in the end of file
+    # final_message = re.sub(r'\s{3,}', '\n\n', final_message)  # clean excessive blank lines
+    # final_message = re.sub(r'\s*$', '', final_message)  # clean blank symbols in the end of file
     logging.info(f'OLD - FINAL NEW MESSAGE FOR NEW SEARCH: {message}')
-    logging.info(f'NEW - FINAL NEW MESSAGE FOR NEW SEARCH: {final_message}')
+    # logging.info(f'NEW - FINAL NEW MESSAGE FOR NEW SEARCH: {final_message}')
     # TODO ^^^
 
     return message
@@ -930,8 +942,8 @@ def mark_new_record_as_processed(conn: sqlalchemy.engine.Connection, new_record:
     """mark all the new records in SQL as processed, to avoid processing in the next iteration"""
 
     try:
-        if new_record.processed == 'yes':
-            if new_record.ignore != 'y':
+        if new_record.processed:
+            if not new_record.ignore:
                 sql_text = sqlalchemy.text("""UPDATE change_log SET notification_sent = 'y' WHERE id=:a;""")
                 conn.execute(sql_text, a=new_record.change_id)
                 logging.info(f'The New Record {new_record.change_id} was marked as processed in PSQL')
@@ -965,7 +977,7 @@ def mark_new_comments_as_processed(conn: sqlalchemy.engine.Connection, record: L
     try:
         # TODO – is it correct that we mark comments processes for any Comments for certain search? Looks
         #  like we can mark some comments which are not yet processed at all. Probably base on change_id? To be checked
-        if record.processed == 'yes' and record.ignore != 'y':
+        if record.processed and not record.ignore:
             if record.change_type == 3:
                 sql_text = sqlalchemy.text("UPDATE comments SET notification_sent = 'y' WHERE search_forum_num=:a;")
                 conn.execute(sql_text, a=record.forum_search_num)
@@ -1022,21 +1034,69 @@ def delete_ended_search_following(conn: Connection, new_record: LineInChangeLog)
     return None
 
 
+def enrich_users_list_with_age_periods(conn: Connection, list_of_users: list[User]) -> None:
+    """add the data on Lost people age notification preferences from user_pref_age into users List"""
+
+    try:
+        notif_prefs = conn.execute("""SELECT user_id, period_min, period_max FROM user_pref_age;""").fetchall()
+
+        if not notif_prefs:
+            return
+
+        number_of_enrichments_old = 0
+        number_of_enrichments = 0
+        for np_line in notif_prefs:
+            new_period = [np_line[1], np_line[2]]
+
+            for u_line in list_of_users:
+                if u_line.user_id == np_line[0]:
+                    u_line.age_periods.append(new_period)
+                    number_of_enrichments += 1
+
+        logging.info(f'Users List enriched with Age Prefs, OLD num of enrichments is {number_of_enrichments_old}')
+        logging.info(f'Users List enriched with Age Prefs, num of enrichments is {number_of_enrichments}')
+
+    except Exception as e:
+        logging.info('Not able to enrich Users List with Age Prefs')
+        logging.exception(e)
+
+
+def enrich_users_list_with_radius(conn: Connection, list_of_users: list[User]) -> None:
+    """add the data on distance notification preferences from user_pref_radius into users List"""
+
+    try:
+        notif_prefs = conn.execute("""SELECT user_id, radius FROM user_pref_radius;""").fetchall()
+
+        if not notif_prefs:
+            return None
+
+        number_of_enrichments = 0
+        for np_line in notif_prefs:
+            for u_line in list_of_users:
+                if u_line.user_id == np_line[0]:
+                    u_line.radius = int(round(np_line[1], 0))
+                    number_of_enrichments += 1
+                    print(f'TEMP - RADIUS user_id = {u_line.user_id}, radius = {u_line.radius}')
+
+        logging.info(f'Users List enriched with Radius, num of enrichments is {number_of_enrichments}')
+
+    except Exception as e:
+        logging.info('Not able to enrich Users List with Radius')
+        logging.exception(e)
+
+
 def create_user_notifications_from_change_log_record(
     analytics_start_of_func, function_id, conn, new_record: LineInChangeLog
 ):
     # compose Users List: all the notifications recipients' details
-    admins_list, testers_list = get_list_of_admins_and_testers(conn)  # for debug purposes
     list_of_users = compose_users_list_from_users(conn, new_record)
-    enrich_users_list_with_age_periods(conn, list_of_users)
-    enrich_users_list_with_radius(conn, list_of_users)
 
     analytics_match_finish = datetime.datetime.now()
     duration_match = round((analytics_match_finish - analytics_start_of_func).total_seconds(), 2)
     logging.info(f'time: function match end-to-end – {duration_match} sec')
 
     # check the matrix: new update - user and initiate sending notifications
-    iterate_over_all_users(conn, admins_list, new_record, list_of_users, function_id)
+    generate_notifications_for_users(conn, new_record, list_of_users, function_id)
 
     analytics_iterations_finish = datetime.datetime.now()
     duration_iterations = round((analytics_iterations_finish - analytics_match_finish).total_seconds(), 2)
@@ -1057,8 +1117,8 @@ def enrich_new_record(conn: Connection, new_record: LineInChangeLog) -> None:
     enrich_new_record_from_searches(conn, new_record)
     enrich_new_record_with_search_activities(conn, new_record)
     enrich_new_record_with_managers(conn, new_record)
-    enrich_new_record_with_comments(conn, 'all', new_record)
-    enrich_new_record_with_comments(conn, 'inforg', new_record)
+    enrich_new_record_with_comments(conn, CommentsType.all, new_record)
+    enrich_new_record_with_comments(conn, CommentsType.inforg, new_record)
     enrich_new_record_with_clickable_name(new_record)
     enrich_new_record_with_emoji(new_record)
     enrich_new_record_with_com_message_texts(new_record)
@@ -1071,7 +1131,7 @@ def main(event: dict, context: str) -> Any:  # noqa
 
     function_id = generate_random_function_id()
     message_from_pubsub = process_pubsub_message_v2(event)
-    triggered_by_func_id = get_triggering_function(message_from_pubsub)
+    triggered_by_func_id = get_triggering_function(message_from_pubsub)  # type:ignore[arg-type]
 
     there_is_function_working_in_parallel = check_and_save_event_id(
         context,

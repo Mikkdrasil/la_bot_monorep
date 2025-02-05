@@ -70,12 +70,12 @@ def test_get_the_new_group_id():
 
 
 def test_iterate_over_all_users():
-    res = run_smoke(main.iterate_over_all_users)
+    res = run_smoke(main.generate_notifications_for_users)
     pass
 
 
 def test_iterate_users_generate_one_notification():
-    res = run_smoke(main.iterate_users_generate_one_notification)
+    res = run_smoke(main.generate_notification_for_user)
     pass
 
 

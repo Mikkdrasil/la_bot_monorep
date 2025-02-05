@@ -1,10 +1,58 @@
 import datetime
+import logging
+import math
+import re
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 WINDOW_FOR_NOTIFICATIONS_DAYS = 60
 COORD_FORMAT = '{0:.5f}'
 COORD_PATTERN = r'0?[3-8]\d\.\d{1,10}[\s\w,]{0,10}[01]?[2-9]\d\.\d{1,10}'
+
+
+class TopicType(Enum):
+    """
+    SQL table 'dict_topic_types'
+    """
+
+    search_regular = 0
+    search_reverse = 1
+    search_patrol = 2
+    search_training = 3
+    search_info_support = 4
+    search_resonance = 5
+    event = 10
+    info = 20
+    all = 30
+    unrecognized = 99
+
+
+SEARCH_TOPIC_TYPES = {0, 1, 2, 3, 4, 5}
+
+
+class NotifType(Enum):
+    """
+    SQL table 'dict_notif_types'
+    """
+
+    topic_new = 0
+    topic_status_change = 1
+    topic_title_change = 2
+    topic_comment_new = 3
+    topic_inforg_comment_new = 4
+    topic_field_trip_new = 5
+    topic_field_trip_change = 6
+    topic_coords_change = 7
+    topic_first_post_change = 8
+    bot_news = 20
+    not_defined = 99
+    all = 30
+
+
+class CommentsType(str, Enum):
+    all = 'all'
+    inforg = 'inforg'
 
 
 @dataclass
@@ -27,42 +75,42 @@ class MessageNewTopic(Message):
 
 @dataclass
 class Comment:
-    url: str = None
-    text: str = None
-    author_nickname: str = None
-    author_link: str = None
-    search_forum_num: Any = None
-    num: Any = None
-    forum_global_id: Any = None
-    ignore: Any = None
+    url: str = ''
+    text: str = ''
+    author_nickname: str = ''
+    author_link: str = ''
+    search_forum_num: int = 0
+    num: int = 0
+    # forum_global_id: Any = None  # not needed
+    # ignore: Any = None  # not needed
 
 
 @dataclass
 class LineInChangeLog:
-    forum_search_num: int = None
-    topic_type_id: int = None
-    change_type: int = None  # it is int from 0 to 99 which represents "change_type" column in change_log
+    forum_search_num: int = 0
+    topic_type_id: int = 0
+    change_type: int = 0  # it is int from 0 to 99 which represents "change_type" column in change_log
     changed_field: Any = None
-    change_id: Any = None  # means change_log_id
+    change_id: int = 0  # means change_log_id
     new_value: Any = None
-    name: Any = None
-    link: Any = None
+    name: str = ''
+    link: str = ''
     status: Any = None
     new_status: Any = None
-    n_of_replies: Any = None
-    title: Any = None
-    age: Any = None
+    n_of_replies: int = 0  # not used
+    title: str = ''
+    age: int = 0
     age_wording: Any = None
     forum_folder: int = None
     activities: list[int] = field(default_factory=list)
-    comments: Any = None
-    comments_inforg: Any = None
+    comments: list[Comment] = field(default_factory=list)
+    comments_inforg: list[Comment] = field(default_factory=list)
     message: Any = None
-    message_object: Any | Message | MessageNewTopic = None  # FIXME
-    processed: Any = None
+    message_object: Any | Message | MessageNewTopic = None  # FIXME - maybe should replace "message"
+    processed: bool = False
     managers: list[str] = field(default_factory=list)
     start_time: datetime.datetime = field(default_factory=datetime.datetime.now)
-    ignore: str = None  # "y"
+    ignore: bool = False
     region: Any = None
     search_latitude: Any = None
     search_longitude: Any = None
@@ -79,16 +127,158 @@ class LineInChangeLog:
 class User:
     user_id: int = None
     username_telegram: str = None
-    notification_preferences: str = None
-    notif_pref_ids_list: list = None
+    # notification_preferences: str = None
+    # notif_pref_ids_list: list = None
     all_notifs: list = None
-    topic_type_pref_ids_list: list = None
+    # topic_type_pref_ids_list: list = None
     user_latitude: float = None
     user_longitude: float = None
-    user_regions: list = None  # TODO remove
+    # user_regions: list = None  # TODO remove
     user_in_multi_folders: bool = True
-    user_corr_regions: list = None
-    user_new_search_notifs: bool = None
-    user_role: str = None
+    # user_corr_regions: list = None
+    user_new_search_notifs: int = 0
+    user_role: str = None  # not used
     age_periods: list = None
-    radius: float = None
+    radius: int = 0
+
+
+def define_family_name(title_string: str, predefined_fam_name: str | None) -> str:
+    """define family name if it's not available as A SEPARATE FIELD in Searches table"""
+
+    # if family name is already defined
+    if predefined_fam_name:
+        fam_name = predefined_fam_name
+
+    # if family name needs to be defined
+    else:
+        string_by_word = title_string.split()
+        # exception case: when Family Name is third word
+        # it happens when first two either Найден Жив or Найден Погиб with different word forms
+        if string_by_word[0].lower().startswith('найд'):
+            fam_name = string_by_word[2]
+
+        # case when "Поиск приостановлен"
+        elif string_by_word[1].lower().startswith('приостан'):
+            fam_name = string_by_word[2]
+
+        # case when "Поиск остановлен"
+        elif string_by_word[1].lower().startswith('остановл'):
+            fam_name = string_by_word[2]
+
+        # all the other cases
+        else:
+            fam_name = string_by_word[1]
+
+    return fam_name
+
+
+def add_tel_link(incoming_text: str, modifier: str = 'all') -> str:
+    """check is text contains phone number and replaces it with clickable version, also removes [tel] tags"""
+
+    outcome_text = None
+
+    # Modifier for all users
+    if modifier == 'all':
+        outcome_text = incoming_text
+        nums = re.findall(r'(?:\+7|7|8)\s?[\s\-(]?\s?\d{3}[\s\-)]?\s?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', incoming_text)
+        for num in nums:
+            outcome_text = outcome_text.replace(num, '<code>' + str(num) + '</code>')
+
+        phpbb_tags_to_delete = {'[tel]', '[/tel]'}
+        for tag in phpbb_tags_to_delete:
+            outcome_text = outcome_text.replace(tag, '', 5)
+
+    # Modifier for Admin
+    else:
+        pass
+
+    return outcome_text
+
+
+def define_dist_and_dir_to_search(search_lat: str, search_lon: str, user_let: float, user_lon: float):
+    """define direction & distance from user's home coordinates to search coordinates"""
+
+    def calc_bearing(lat_2, lon_2, lat_1, lon_1):
+        d_lon_ = lon_2 - lon_1
+        x = math.cos(math.radians(lat_2)) * math.sin(math.radians(d_lon_))
+        y = math.cos(math.radians(lat_1)) * math.sin(math.radians(lat_2)) - math.sin(math.radians(lat_1)) * math.cos(
+            math.radians(lat_2)
+        ) * math.cos(math.radians(d_lon_))
+        bearing = math.atan2(x, y)  # used to determine the quadrant
+        bearing = math.degrees(bearing)
+
+        return bearing
+
+    def calc_direction(lat_1, lon_1, lat_2, lon_2):
+        points = [
+            '&#8593;&#xFE0E;',
+            '&#x2197;&#xFE0F;',
+            '&#8594;&#xFE0E;',
+            '&#8600;&#xFE0E;',
+            '&#8595;&#xFE0E;',
+            '&#8601;&#xFE0E;',
+            '&#8592;&#xFE0E;',
+            '&#8598;&#xFE0E;',
+        ]
+        bearing = calc_bearing(lat_1, lon_1, lat_2, lon_2)
+        bearing += 22.5
+        bearing = bearing % 360
+        bearing = int(bearing / 45)  # values 0 to 7
+        nsew = points[bearing]
+
+        return nsew
+
+    earth_radius = 6373.0  # radius of the Earth
+
+    # coordinates in radians
+    lat1 = math.radians(float(search_lat))
+    lon1 = math.radians(float(search_lon))
+    lat2 = math.radians(float(user_let))
+    lon2 = math.radians(float(user_lon))
+
+    # change in coordinates
+    d_lon = lon2 - lon1
+
+    d_lat = lat2 - lat1
+
+    # Haversine formula
+    a = math.sin(d_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(d_lon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    distance = earth_radius * c
+    dist = round(distance, 1)
+
+    # define direction
+    direction = calc_direction(lat1, lon1, lat2, lon2)
+
+    return dist, direction
+
+
+def get_coords_from_list(input_list) -> tuple[str | None, str | None]:
+    """get the list of coords [lat, lon] for the input list of strings"""
+
+    if not input_list:
+        return None, None
+
+    coords_in_text = []
+
+    for line in input_list:
+        coords_in_text += re.findall(COORD_PATTERN, line)
+
+    if not (coords_in_text and len(coords_in_text) == 1):
+        return None, None
+
+    coords_as_text = coords_in_text[0]
+    coords_as_list = re.split(r'(?<=\d)[\s,]+(?=\d)', coords_as_text)
+
+    if len(coords_as_list) != 2:
+        return None, None
+
+    try:
+        got_lat = COORD_FORMAT.format(float(coords_as_list[0]))
+        got_lon = COORD_FORMAT.format(float(coords_as_list[1]))
+        return got_lat, got_lon
+
+    except Exception as e:  # noqa
+        logging.exception(e)
+        return None, None

@@ -310,17 +310,17 @@ def evaluate_city_locations(city_locations):
     return [first_coords]
 
 
-def get_triggering_function(message_from_pubsub: dict) -> str:
+def get_triggering_function(message_from_pubsub: dict) -> int:
     """get a function_id of the function, which triggered this function (if available)"""
 
-    triggered_by_func_id = None
+    triggered_by_func_id = 0
     try:
         if (
             message_from_pubsub
             and isinstance(message_from_pubsub, dict)
             and 'triggered_by_func_id' in message_from_pubsub.keys()
         ):
-            triggered_by_func_id = message_from_pubsub['triggered_by_func_id']
+            triggered_by_func_id = int(message_from_pubsub['triggered_by_func_id'])
 
     except Exception as e:
         logging.exception(e)
