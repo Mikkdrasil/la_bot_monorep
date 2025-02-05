@@ -29,7 +29,7 @@ def line_in_change_log() -> LineInChangeLog:
 
 
 @pytest.fixture
-def search_record(default_dict_notif_type: db_models.DictNotifType) -> db_models.Search:
+def search_record(dict_notif_type_status_change: db_models.DictNotifType) -> db_models.Search:
     family = faker.last_name()
     return db_factories.SearchFactory.create_sync(
         status='НЖ',

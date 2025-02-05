@@ -270,11 +270,11 @@ class TestUsersFilter:
 
         assert user in cropped_users
 
-    def test_filter_users_with_prepared_messages_2(self, connection, default_dict_notif_type):
+    def test_filter_users_with_prepared_messages_2(self, connection, dict_notif_type_status_change):
         line_in_change_log = LineInChangeLogFactory.build()
         user = UserFactory.build()
         user_model = db_factories.UserFactory.create_sync(user_id=user.user_id)
-        mailing = db_factories.NotifMailingFactory.create_sync(dict_notif_type=default_dict_notif_type)
+        mailing = db_factories.NotifMailingFactory.create_sync(dict_notif_type=dict_notif_type_status_change)
         db_factories.NotifByUserFactory.create_sync(
             user_id=user.user_id, change_log_id=line_in_change_log.change_log_id, mailing=mailing
         )
@@ -284,7 +284,7 @@ class TestUsersFilter:
 
         assert user not in cropped_users
 
-    def test_filter_users_not_following_this_search_1(self, connection, default_dict_notif_type):
+    def test_filter_users_not_following_this_search_1(self, connection, dict_notif_type_status_change):
         line_in_change_log = LineInChangeLogFactory.build()
         user = UserFactory.build()
         db_factories.UserFactory.create_sync(user_id=user.user_id)
@@ -294,7 +294,7 @@ class TestUsersFilter:
 
         assert user in cropped_users
 
-    def test_filter_users_not_following_this_search_2(self, connection, default_dict_notif_type):
+    def test_filter_users_not_following_this_search_2(self, connection, dict_notif_type_status_change):
         line_in_change_log = LineInChangeLogFactory.build()
         user = UserFactory.build()
         db_factories.UserFactory.create_sync(user_id=user.user_id)
@@ -310,7 +310,7 @@ class TestUsersFilter:
 
         assert user in cropped_users
 
-    def test_filter_users_not_following_this_search_3(self, connection, default_dict_notif_type):
+    def test_filter_users_not_following_this_search_3(self, connection, dict_notif_type_status_change):
         line_in_change_log = LineInChangeLogFactory.build()
         user = UserFactory.build()
         user_model = db_factories.UserFactory.create_sync(user_id=user.user_id)
@@ -326,7 +326,7 @@ class TestUsersFilter:
 
         assert user not in cropped_users
 
-    def test_filter_users_not_following_this_search_4(self, connection, default_dict_notif_type):
+    def test_filter_users_not_following_this_search_4(self, connection, dict_notif_type_status_change):
         line_in_change_log = LineInChangeLogFactory.build()
         user = UserFactory.build()
         user_model = db_factories.UserFactory.create_sync(user_id=user.user_id)
@@ -343,7 +343,7 @@ class TestUsersFilter:
 
         assert user not in cropped_users
 
-    def test_filter_users_not_following_this_search_5(self, connection, default_dict_notif_type):
+    def test_filter_users_not_following_this_search_5(self, connection, dict_notif_type_status_change):
         line_in_change_log = LineInChangeLogFactory.build()
         user = UserFactory.build()
         user_model = db_factories.UserFactory.create_sync(user_id=user.user_id)
@@ -360,7 +360,7 @@ class TestUsersFilter:
 
         assert user in cropped_users
 
-    def test_filter_apply_1(self, connection, default_dict_notif_type):
+    def test_filter_apply_1(self, connection, dict_notif_type_status_change):
         # complex filter
         line_in_change_log = LineInChangeLogFactory.build(
             city_locations='', search_latitude='54.1234', search_longitude='55.1234'
@@ -373,7 +373,7 @@ class TestUsersFilter:
 
         assert user in cropped_users
 
-    def test_filter_apply_2(self, connection, default_dict_notif_type):
+    def test_filter_apply_2(self, connection, dict_notif_type_status_change):
         # complex filter
         line_in_change_log = LineInChangeLogFactory.build(
             city_locations='', search_latitude='60.1234', search_longitude='60.1234'

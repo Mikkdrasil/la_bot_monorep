@@ -100,9 +100,9 @@ class NotificationMaker:
     def generate_notification_for_user(
         self,
         new_record: LineInChangeLog,
-        mailing_id,
+        mailing_id: int,
         user: User,
-    ):
+    ) -> None:
         change_type = new_record.change_type
         change_log_id = new_record.change_log_id
 
@@ -135,6 +135,25 @@ class NotificationMaker:
         )
         # not None for new_search, field_trips_new, field_trips_change,  coord_change
 
+        self._send_main_text_message(mailing_id, user, change_type, change_log_id, user_message, msg_group_id)
+
+        # save to SQL the sendLocation notification for "new search"
+        if change_type == ChangeType.topic_new and topic_type_id in SEARCH_TOPIC_TYPES:
+            # for user tips in "new search" notifs – to increase sent messages counter
+            self.stat_list_of_recipients.append(user.user_id)
+            self._send_coordinates_for_new_search(new_record, mailing_id, user, change_log_id, msg_group_id)
+        elif change_type == ChangeType.topic_first_post_change:
+            self._send_coordinates_for_first_post_change(mailing_id, user, change_log_id, user_message, msg_group_id)
+
+    def _send_main_text_message(
+        self,
+        mailing_id: int,
+        user: User,
+        change_type: ChangeType,
+        change_log_id: int,
+        user_message: str,
+        msg_group_id: int | None,
+    ) -> None:
         # TODO: make text more compact within 50 symbols
         message_without_html = re.sub(CLEANER_RE, '', user_message)
         message_params = {'parse_mode': 'HTML', 'disable_web_page_preview': 'True'}
@@ -156,21 +175,18 @@ class NotificationMaker:
             change_log_id,
         )
 
-        # save to SQL the sendLocation notification for "new search"
-        if change_type == ChangeType.topic_new and topic_type_id in SEARCH_TOPIC_TYPES:
-            # for user tips in "new search" notifs – to increase sent messages counter
-            self.stat_list_of_recipients.append(user.user_id)
-            self._send_coordinates_for_new_search(new_record, mailing_id, user, change_log_id, msg_group_id)
-        elif change_type == ChangeType.topic_first_post_change:
-            self._send_coordinates_for_first_post_change(mailing_id, user, change_log_id, user_message, msg_group_id)
-
     def _send_coordinates_for_new_search(
-        self, new_record: LineInChangeLog, mailing_id: int, user: User, change_log_id: int, msg_group_id: int | None
+        self,
+        new_record: LineInChangeLog,
+        mailing_id: int,
+        user: User,
+        change_log_id: int,
+        msg_group_id: int | None,
     ) -> None:
-        if new_record.search_latitude and new_record.search_longitude:
-            message_params = {'latitude': new_record.search_latitude, 'longitude': new_record.search_longitude}
-
-            # record into SQL table notif_by_user (not text, but coords only)
+        if not (new_record.search_latitude or new_record.search_longitude):
+            return
+        message_params = {'latitude': new_record.search_latitude, 'longitude': new_record.search_longitude}
+        # record into SQL table notif_by_user (not text, but coords only)
         self.save_to_sql_notif_by_user(
             mailing_id,
             user.user_id,
@@ -183,7 +199,12 @@ class NotificationMaker:
         )
 
     def _send_coordinates_for_first_post_change(
-        self, mailing_id: int, user: User, change_log_id: int, user_message: str, msg_group_id: int | None
+        self,
+        mailing_id: int,
+        user: User,
+        change_log_id: int,
+        user_message: str,
+        msg_group_id: int | None,
     ) -> None:
         try:
             list_of_coords = re.findall(r'<code>', user_message)
@@ -292,8 +313,6 @@ class NotificationMaker:
             h=change_log_id_,
             i=datetime.datetime.now(),
         )
-
-        return None
 
     def record_notification_statistics(self) -> None:
         """records +1 into users' statistics of new searches notification. needed only for usability tips"""
