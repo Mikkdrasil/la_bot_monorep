@@ -53,8 +53,9 @@ class UserFactory(BaseFactory[db_models.User]):
 
 
 class UserPreferenceFactory(BaseFactory[db_models.UserPreference]):
-    preference = 'new_searches'  # status_changes, bot_news, new_searches
-    pref_id = 0  # 0, 1,20
+    pass
+    # preference = 'new_searches'  # status_changes, bot_news, new_searches
+    # pref_id = 0  # 0,1,3,4,8,20,30
     """
     user_pref_type_id - topic_type_id 0,3,4,5
     user_pref_search_whitelist, user_pref_search_filtering - ?? (no permissions)
@@ -76,6 +77,18 @@ id  |user_id   |period_name|period_set_date        |period_min|period_max|
 
 
 class UserRegionalPreferenceFactory(BaseFactory[db_models.UserRegionalPreference]):
+    pass
+
+
+class UserCoordinateFactory(BaseFactory[db_models.UserCoordinate]):
+    pass
+
+
+class UserPrefRegionFactory(BaseFactory[db_models.UserPrefRegion]):
+    pass
+
+
+class UserPrefRadiusFactory(BaseFactory[db_models.UserPrefRadiu]):
     pass
 
 

@@ -22,7 +22,9 @@ class UsersListComposer:
         """add the data on Lost people age notification preferences from user_pref_age into users List"""
 
         try:
-            notif_prefs = self.conn.execute("""SELECT user_id, period_min, period_max FROM user_pref_age;""").fetchall()
+            notif_prefs = self.conn.execute("""
+                SELECT user_id, period_min, period_max FROM user_pref_age;
+                                            """).fetchall()
 
             if not notif_prefs:
                 return
@@ -48,7 +50,9 @@ class UsersListComposer:
         """add the data on distance notification preferences from user_pref_radius into users List"""
 
         try:
-            notif_prefs = self.conn.execute("""SELECT user_id, radius FROM user_pref_radius;""").fetchall()
+            notif_prefs = self.conn.execute("""
+                SELECT user_id, radius FROM user_pref_radius;
+                                            """).fetchall()
 
             if not notif_prefs:
                 return None
@@ -87,9 +91,9 @@ class UsersListComposer:
                     user_notif_type_pref AS (
                         SELECT user_id, CASE WHEN 30 = ANY(agg) THEN True ELSE False END AS all_notifs
                         FROM user_notif_pref_prep
-                        WHERE (30 = ANY(agg) OR :a = ANY(agg))
+                        WHERE (30 = ANY(agg) OR :change_type = ANY(agg))
                             AND NOT (4/*topic_inforg_comment_new*/ = ANY(agg)
-                                AND :a = 2/*topic_title_change*/)),/*AK20240409:issue13*/
+                                AND :change_type = 2/*topic_title_change*/)),/*AK20240409:issue13*/
                     user_folders_prep AS (
                         SELECT user_id, forum_folder_num,
                             CASE WHEN count(forum_folder_num) OVER (PARTITION BY user_id) > 1
@@ -97,14 +101,14 @@ class UsersListComposer:
                         FROM user_regional_preferences),
                     user_folders AS (
                         SELECT user_id, forum_folder_num, multi_folder
-                        FROM user_folders_prep WHERE forum_folder_num= :b),
+                        FROM user_folders_prep WHERE forum_folder_num= :forum_folder),
                     user_topic_pref_prep AS (
                         SELECT user_id, array_agg(topic_type_id) aS agg
                         FROM user_pref_topic_type GROUP BY user_id),
                     user_topic_type_pref AS (
                         SELECT user_id, agg AS all_types
                         FROM user_topic_pref_prep
-                        WHERE 30 = ANY(agg) OR :c = ANY(agg)),
+                        WHERE 30 = ANY(agg) OR :topic_type_id = ANY(agg)),
                     user_short_list AS (
                         SELECT ul.user_id, ul.username_telegram, ul.role , uf.multi_folder, up.all_notifs
                         FROM user_list as ul
@@ -124,7 +128,6 @@ class UsersListComposer:
                         FROM user_short_list AS u
                         LEFT JOIN user_coordinates as uc
                         ON u.user_id=uc.user_id)
-
                 SELECT ns.user_id, ns.username_telegram, ns.latitude, ns.longitude, ns.role,
                     st.num_of_new_search_notifs, ns.multi_folder, ns.all_notifs
                 FROM user_with_loc AS ns
@@ -134,7 +137,10 @@ class UsersListComposer:
                                            """)
 
             users_short_version = self.conn.execute(
-                sql_text_psy, a=new_record.change_type, b=new_record.forum_folder, c=new_record.topic_type_id
+                sql_text_psy,
+                change_type=new_record.change_type,
+                forum_folder=new_record.forum_folder,
+                topic_type_id=new_record.topic_type_id,
             ).fetchall()
 
             analytics_sql_finish = datetime.datetime.now()

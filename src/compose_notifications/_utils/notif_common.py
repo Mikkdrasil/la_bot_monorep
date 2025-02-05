@@ -139,7 +139,7 @@ class User:
     # user_regions: list = None  # TODO remove
     user_in_multi_folders: bool = False
     # user_corr_regions: list = None
-    user_new_search_notifs: int = 0
+    user_new_search_notifs: int = 0  # only for statistics and tips for user
     user_role: str = ''  # not used
     age_periods: list = field(default_factory=list)
     radius: int = 0

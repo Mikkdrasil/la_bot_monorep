@@ -83,21 +83,13 @@ def comment(change_log_db_record_topic_comment_new: db_models.ChangeLog) -> db_m
     )
 
 
-def test_main(
-    user_with_preferences: db_models.User,
+def test_main_entrypoint(
     change_log_db_record_status_change: db_models.ChangeLog,
     search_record: db_models.Search,
 ):
     # NO SMOKE TEST compose_notifications.main.main
-    # TODO paste something to change_log and users
     data = get_event_with_data({'foo': 1, 'triggered_by_func_id': '1'})
-    # user = UserFactory.create_sync()
-
     main.main(data, 'context')
-    """
-    TODO assert that records in notif_by_user appeared
-    """
-    assert True
 
 
 class TestChangeLogExtractor:
