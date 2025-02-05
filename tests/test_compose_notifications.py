@@ -150,8 +150,25 @@ def test_get_change_log_record_by_id(
     assert record.city_locations == search_record.city_locations
 
 
-@pytest.mark.skip(reason='fix later')
+# @pytest.mark.skip(reason='fix later')
 def test_get_coords_from_list():
-    coords_str = '[[54.683253050000005, 55.98561157727167]]'
-    c1, c2 = get_coords_from_list(coords_str)
-    assert c1, c2
+    messages = ['56.1234 60.5678']
+    c1, c2 = get_coords_from_list(messages)
+    assert c1, c2 == ('56.12340', '60.56780')
+
+
+@pytest.mark.parametrize(
+    'search_ages, user_ages, equals',
+    [
+        ([1, 2], [(1, 2)], True),
+        ([1, 3], [(1, 2)], True),
+        ([1, 2], [(2, 3)], True),
+        ([3, 4], [(1, 2)], False),
+        ([3, 4], [(1, 2), (2, 3)], True),
+        ([], [], True),
+    ],
+)
+def test_age_requirements_check(search_ages, user_ages, equals):
+    from compose_notifications._utils.notifications_maker import check_if_age_requirements_met
+
+    assert check_if_age_requirements_met(search_ages, user_ages) == equals

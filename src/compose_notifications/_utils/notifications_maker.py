@@ -195,7 +195,7 @@ class NotificationComposer:
 
     def _filter_users_by_age_settings(self, record: LineInChangeLog, users_list_outcome: list[User]) -> list[User]:
         temp_user_list: list[User] = []
-        search_age_range = [record.age_min, record.age_max]
+        search_age_range = (record.age_min, record.age_max)
 
         for user_line in users_list_outcome:
             user_age_ranges = user_line.age_periods
@@ -795,25 +795,15 @@ def generate_yandex_maps_place_link2(lat: str, lon: str, param: str) -> str:
     return msg
 
 
-def check_if_age_requirements_met(search_ages, user_ages):
+def check_if_age_requirements_met(search_ages: tuple[int | None, int | None], user_ages: list[tuple[int, int]]) -> bool:
     """check if user wants to receive notifications for such age"""
 
-    requirements_met = False
-
-    if not user_ages or not search_ages:
+    if not user_ages or search_ages[0] is None or search_ages[1] is None:
         return True
 
-    for age_rage in user_ages:
-        user_age_range_start = age_rage[0]
-        user_age_range_finish = age_rage[1]
-
-        for i in range(user_age_range_start, user_age_range_finish + 1):
-            for j in range(search_ages[0], search_ages[1] + 1):
-                if i == j:
-                    requirements_met = True
-                    break
-            else:
-                continue
-            break
-
-    return requirements_met
+    for age_range in user_ages:
+        if (min(*age_range) <= max(search_ages[0], search_ages[1])) and (
+            max(*age_range) >= min(search_ages[0], search_ages[1])
+        ):
+            return True
+    return False
