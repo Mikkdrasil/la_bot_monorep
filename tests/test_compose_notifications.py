@@ -3,13 +3,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import compose_notifications._utils.enrich
+import compose_notifications._utils.notif_common
 from compose_notifications import main
 from tests.common import get_event_with_data
 
 
 @pytest.fixture
-def line() -> main.LineInChangeLog:
-    return main.LineInChangeLog(
+def line() -> compose_notifications._utils.notif_common.LineInChangeLog:
+    return compose_notifications._utils.notif_common.LineInChangeLog(
         forum_search_num=1,
         start_time=datetime.now(),
         activities=[1, 2],
@@ -27,13 +29,13 @@ def test_main():
     assert True
 
 
-def test_compose_com_msg_on_new_topic(line: main.LineInChangeLog):
+def test_compose_com_msg_on_new_topic(line: compose_notifications._utils.notif_common.LineInChangeLog):
     # NO SMOKE TEST compose_notifications.main.compose_com_msg_on_new_topic
-    messages, message, line_ignore = main.compose_com_msg_on_new_topic(line)
+    messages, message, line_ignore = compose_notifications._utils.enrich.compose_com_msg_on_new_topic(line)
     assert 'manager1' in message.managers and 'manager2' in message.managers
 
 
-def test_enrich_new_record_with_emoji(line: main.LineInChangeLog):
+def test_enrich_new_record_with_emoji(line: compose_notifications._utils.notif_common.LineInChangeLog):
     # NO SMOKE TEST compose_notifications.main.enrich_new_record_with_emoji
-    res = main.enrich_new_record_with_emoji(line)
+    res = compose_notifications._utils.enrich.enrich_new_record_with_emoji(line)
     assert res.topic_emoji

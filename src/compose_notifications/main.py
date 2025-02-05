@@ -1,9 +1,7 @@
 """compose and save all the text / location messages, then initiate sending via pub-sub"""
 
-import ast
 import datetime
 import logging
-import math
 import re
 from typing import Any, List, Optional, Tuple
 
@@ -13,367 +11,37 @@ from sqlalchemy.engine.base import Connection
 from _dependencies.cloud_func_parallel_guard import check_and_save_event_id
 from _dependencies.commons import Topics, get_app_config, publish_to_pubsub, setup_google_logging, sqlalchemy_get_pool
 from _dependencies.misc import (
-    age_writer,
     generate_random_function_id,
     get_triggering_function,
     notify_admin,
     process_pubsub_message_v2,
 )
 
+from ._utils.enrich import (
+    define_dist_and_dir_to_search,
+    enrich_new_record_from_searches,
+    enrich_new_record_with_clickable_name,
+    enrich_new_record_with_com_message_texts,
+    enrich_new_record_with_comments,
+    enrich_new_record_with_emoji,
+    enrich_new_record_with_managers,
+    enrich_new_record_with_search_activities,
+    enrich_users_list_with_age_periods,
+    enrich_users_list_with_radius,
+)
+from ._utils.notif_common import LineInChangeLog, User, coord_format
+
 setup_google_logging()
 
 
-WINDOW_FOR_NOTIFICATIONS_DAYS = 60
 INTERVAL_TO_CHECK_PARALLEL_FUNCTION_SECONDS = 130
 
-coord_format = '{0:.5f}'
 stat_list_of_recipients = []  # list of users who received notification on new search
 fib_list = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987]
-coord_pattern = r'0?[3-8]\d\.\d{1,10}[\s\w,]{0,10}[01]?[2-9]\d\.\d{1,10}'
-
-
-class Comment:
-    def __init__(
-        self,
-        url=None,
-        text=None,
-        author_nickname=None,
-        author_link=None,
-        topic_id=None,
-        num=None,
-        forum_global_id=None,
-        ignore=None,
-    ):
-        self.url = url
-        self.text = text
-        self.author_nickname = author_nickname
-        self.author_link = author_link
-        self.search_forum_num = topic_id
-        self.num = num
-        self.forum_global_id = forum_global_id
-        self.ignore = ignore
-
-    def __str__(self):
-        return str(
-            [
-                self.url,
-                self.text,
-                self.author_nickname,
-                self.author_link,
-                self.search_forum_num,
-                self.num,
-                self.forum_global_id,
-                self.ignore,
-            ]
-        )
-
-
-class LineInChangeLog:
-    def __init__(
-        self,
-        forum_search_num=None,
-        topic_type_id=None,
-        change_type=None,  # it is int from 0 to 99 which represents "change_type" column in change_log
-        changed_field=None,
-        change_id=None,  # means change_log_id
-        new_value=None,
-        name=None,
-        link=None,
-        status=None,
-        new_status=None,
-        n_of_replies=None,
-        title=None,
-        age=None,
-        age_wording=None,
-        forum_folder=None,
-        activities=None,
-        comments=None,
-        comments_inforg=None,
-        message=None,
-        message_object=None,  # FIXME
-        processed=None,
-        managers=None,
-        start_time=None,
-        ignore=None,
-        region=None,
-        search_latitude=None,
-        search_longitude=None,
-        coords_change_type=None,
-        city_locations=None,
-        display_name=None,
-        age_min=None,
-        age_max=None,
-        clickable_name=None,
-        topic_emoji=None,
-    ):
-        self.forum_search_num = forum_search_num
-        self.topic_type_id = topic_type_id
-        self.change_type = change_type
-        self.changed_field = changed_field
-        self.change_id = change_id
-        self.new_value = new_value
-        self.name = name
-        self.link = link
-        self.status = status
-        self.new_status = new_status
-        self.n_of_replies = n_of_replies
-        self.title = title
-        self.age = age
-        self.age_wording = age_wording
-        self.forum_folder = forum_folder
-        self.activities = activities
-        self.comments = comments
-        self.comments_inforg = comments_inforg
-        self.message = message
-        self.message_object = message_object
-        self.processed = processed
-        self.managers = managers
-        self.start_time = start_time
-        self.ignore = ignore
-        self.region = region
-        self.search_latitude = search_latitude
-        self.search_longitude = search_longitude
-        self.coords_change_type = coords_change_type
-        self.city_locations = city_locations
-        self.display_name = display_name
-        self.age_min = age_min
-        self.age_max = age_max
-        self.clickable_name = clickable_name
-        self.topic_emoji = topic_emoji
-
-    def __str__(self):
-        return str(
-            [
-                self.forum_search_num,
-                self.change_type,
-                self.changed_field,
-                self.new_value,
-                self.change_id,
-                self.name,
-                self.link,
-                self.status,
-                self.n_of_replies,
-                self.title,
-                self.age,
-                self.age_wording,
-                self.forum_folder,
-                self.search_latitude,
-                self.search_longitude,
-                self.activities,
-                self.comments,
-                self.comments_inforg,
-                self.message,
-                self.processed,
-                self.managers,
-                self.start_time,
-                self.ignore,
-                self.region,
-                self.coords_change_type,
-                self.display_name,
-                self.age_min,
-                self.age_max,
-                self.topic_type_id,
-                self.clickable_name,
-                self.topic_emoji,
-            ]
-        )
-
-
-class User:
-    def __init__(
-        self,
-        user_id=None,
-        username_telegram=None,  # TODO: to check if it's needed
-        notification_preferences=None,  # TODO: to check if it's needed
-        notif_pref_ids_list=None,  # TODO: to check if it's needed,
-        all_notifs=None,
-        topic_type_pref_ids_list=None,  # TODO: to check if it's needed
-        user_latitude=None,
-        user_longitude=None,
-        user_regions=None,  # TODO: COULD BE NEEDED for MULTY-REGION to check if it's needed
-        user_in_multi_folders=True,
-        user_corr_regions=None,  # FIXME - seems it's not needed anymore
-        user_new_search_notifs=None,  # TODO: to check if it's needed
-        user_role=None,  # TODO: to check if it's needed
-        user_age_periods=None,  # noqa
-        radius=None,
-    ):
-        user_age_periods = []
-        self.user_id = user_id
-        self.username_telegram = username_telegram
-        self.notification_preferences = notification_preferences
-        self.notif_pref_ids_list = notif_pref_ids_list
-        self.all_notifs = all_notifs
-        self.topic_type_pref_ids_list = topic_type_pref_ids_list
-        self.user_latitude = user_latitude
-        self.user_longitude = user_longitude
-        self.user_regions = user_regions
-        self.user_in_multi_folders = user_in_multi_folders
-        self.user_corr_regions = user_corr_regions
-        self.user_new_search_notifs = user_new_search_notifs
-        self.role = user_role
-        self.age_periods = user_age_periods
-        self.radius = radius
-
-    def __str__(self):
-        return str(
-            [
-                self.user_id,
-                self.username_telegram,
-                self.notification_preferences,
-                self.notif_pref_ids_list,
-                self.all_notifs,
-                self.topic_type_pref_ids_list,
-                self.user_latitude,
-                self.user_longitude,
-                self.user_regions,
-                self.user_in_multi_folders,
-                self.user_corr_regions,
-                self.user_new_search_notifs,
-                self.role,
-                self.age_periods,
-                self.radius,
-            ]
-        )
-
-    def __eq__(self, other):
-        return (
-            self.user_id == other.user_id
-            and self.username_telegram == other.username_telegram
-            and self.notification_preferences == other.notification_preferences
-            and self.notif_pref_ids_list == other.notif_pref_ids_list
-            and self.topic_type_pref_ids_list == other.topic_type_pref_ids_list
-            and self.user_latitude == other.user_latitude
-            and self.user_longitude == other.user_longitude
-            and self.user_regions == other.user_regions
-            and self.user_in_multi_folders == other.user_in_multi_folders
-            and self.all_notifs == other.all_notifs
-            and self.user_corr_regions == other.user_corr_regions
-            and self.user_new_search_notifs == other.user_new_search_notifs
-            and self.role == other.role
-            and self.age_periods == other.age_periods
-            and self.radius == other.radius
-        )
-
-
-class Message:
-    def __init__(self, name=None, age=None, display_name=None, clickable_name=None):
-        self.name = name
-        self.age = age
-        self.display_name = display_name
-        self.clickable_name = clickable_name
-
-
-class MessageNewTopic(Message):
-    def __init__(
-        self,
-        city_coords=None,
-        hq_coords=None,
-        activities=None,
-        managers=None,
-        hint_on_coords=None,
-        hint_on_something=None,  # FIXME
-    ):
-        super().__init__()
-        self.city_coords = city_coords
-        self.hq_coords = hq_coords
-        self.activities = activities
-        self.managers = managers
-        self.hint_on_coords = hint_on_coords
-        self.hint_on_something = hint_on_something  # FIXME
 
 
 def sql_connect() -> sqlalchemy.engine.Engine:
     return sqlalchemy_get_pool(5, 60)
-
-
-def define_family_name(title_string: str, predefined_fam_name: str | None) -> str:
-    """define family name if it's not available as A SEPARATE FIELD in Searches table"""
-
-    # if family name is already defined
-    if predefined_fam_name:
-        fam_name = predefined_fam_name
-
-    # if family name needs to be defined
-    else:
-        string_by_word = title_string.split()
-        # exception case: when Family Name is third word
-        # it happens when first two either Найден Жив or Найден Погиб with different word forms
-        if string_by_word[0][0:4].lower() == 'найд':
-            fam_name = string_by_word[2]
-
-        # case when "Поиск приостановлен"
-        elif string_by_word[1][0:8].lower() == 'приостан':
-            fam_name = string_by_word[2]
-
-        # case when "Поиск остановлен"
-        elif string_by_word[1][0:8].lower() == 'остановл':
-            fam_name = string_by_word[2]
-
-        # all the other cases
-        else:
-            fam_name = string_by_word[1]
-
-    return fam_name
-
-
-def define_dist_and_dir_to_search(search_lat, search_lon, user_let, user_lon):
-    """define direction & distance from user's home coordinates to search coordinates"""
-
-    def calc_bearing(lat_2, lon_2, lat_1, lon_1):
-        d_lon_ = lon_2 - lon_1
-        x = math.cos(math.radians(lat_2)) * math.sin(math.radians(d_lon_))
-        y = math.cos(math.radians(lat_1)) * math.sin(math.radians(lat_2)) - math.sin(math.radians(lat_1)) * math.cos(
-            math.radians(lat_2)
-        ) * math.cos(math.radians(d_lon_))
-        bearing = math.atan2(x, y)  # used to determine the quadrant
-        bearing = math.degrees(bearing)
-
-        return bearing
-
-    def calc_direction(lat_1, lon_1, lat_2, lon_2):
-        points = [
-            '&#8593;&#xFE0E;',
-            '&#x2197;&#xFE0F;',
-            '&#8594;&#xFE0E;',
-            '&#8600;&#xFE0E;',
-            '&#8595;&#xFE0E;',
-            '&#8601;&#xFE0E;',
-            '&#8592;&#xFE0E;',
-            '&#8598;&#xFE0E;',
-        ]
-        bearing = calc_bearing(lat_1, lon_1, lat_2, lon_2)
-        bearing += 22.5
-        bearing = bearing % 360
-        bearing = int(bearing / 45)  # values 0 to 7
-        nsew = points[bearing]
-
-        return nsew
-
-    earth_radius = 6373.0  # radius of the Earth
-
-    # coordinates in radians
-    lat1 = math.radians(float(search_lat))
-    lon1 = math.radians(float(search_lon))
-    lat2 = math.radians(float(user_let))
-    lon2 = math.radians(float(user_lon))
-
-    # change in coordinates
-    d_lon = lon2 - lon1
-
-    d_lat = lat2 - lat1
-
-    # Haversine formula
-    a = math.sin(d_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(d_lon / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    distance = earth_radius * c
-    dist = round(distance, 1)
-
-    # define direction
-    direction = calc_direction(lat1, lon1, lat2, lon2)
-
-    return dist, direction
 
 
 def compose_new_records_from_change_log(conn: Connection) -> LineInChangeLog:
@@ -413,557 +81,6 @@ def compose_new_records_from_change_log(conn: Connection) -> LineInChangeLog:
     logging.info(f'New Record composed from Change Log: {str(new_record)}')
 
     return new_record
-
-
-def enrich_new_record_from_searches(conn: Connection, r_line: LineInChangeLog):
-    """add the additional data from Searches into New Records"""
-
-    try:
-        sql_text = sqlalchemy.text(
-            """WITH
-            s AS (
-                SELECT search_forum_num, forum_search_title, num_of_replies, family_name, age,
-                    forum_folder_id, search_start_time, display_name, age_min, age_max, status, city_locations,
-                    topic_type_id
-                FROM searches
-                WHERE search_forum_num = :a
-            ),
-            ns AS (
-                SELECT s.search_forum_num, s.status, s.forum_search_title, s.num_of_replies, s.family_name,
-                    s.age, s.forum_folder_id, sa.latitude, sa.longitude, s.search_start_time, s.display_name,
-                    s.age_min, s.age_max, s.status, s.city_locations, s.topic_type_id
-                FROM s
-                LEFT JOIN search_coordinates as sa
-                ON s.search_forum_num=sa.search_id
-            )
-            SELECT ns.*, f.folder_display_name
-            FROM ns
-            LEFT JOIN geo_folders_view AS f
-            ON ns.forum_folder_id = f.folder_id;"""
-        )
-
-        s_line = conn.execute(sql_text, a=r_line.forum_search_num).fetchone()
-
-        if not s_line:
-            logging.info('New Record WERE NOT enriched from Searches as there was no record in searches')
-            logging.info(f'New Record is {r_line}')
-            logging.info(f'extract from searches is {s_line}')
-            logging.exception('no search in searches table!')
-            return r_line
-
-        r_line.status = s_line[1]
-        r_line.link = f'https://lizaalert.org/forum/viewtopic.php?t={r_line.forum_search_num}'
-        r_line.title = s_line[2]
-        r_line.n_of_replies = s_line[3]
-        r_line.name = define_family_name(r_line.title, s_line[4])  # cuz not all the records has names in S
-        r_line.age = s_line[5]
-        r_line.age_wording = age_writer(s_line[5])
-        r_line.forum_folder = s_line[6]
-        r_line.search_latitude = s_line[7]
-        r_line.search_longitude = s_line[8]
-        r_line.start_time = s_line[9]
-        r_line.display_name = s_line[10]
-        r_line.age_min = s_line[11]
-        r_line.age_max = s_line[12]
-        r_line.new_status = s_line[13]
-        r_line.city_locations = s_line[14]
-        r_line.topic_type_id = s_line[15]
-        r_line.region = s_line[16]
-
-        logging.info(f'TEMP – FORUM_FOLDER = {r_line.forum_folder}, while s_line = {str(s_line)}')
-        logging.info(f'TEMP – CITY LOCS = {r_line.city_locations}')
-        logging.info(f'TEMP – STATUS_OLD = {r_line.status}, STATUS_NEW = {r_line.new_status}')
-        logging.info(f'TEMP – TOPIC_TYPE = {r_line.topic_type_id}')
-
-        # case: when new search's status is already not "Ищем" – to be ignored
-        if r_line.status != 'Ищем' and r_line.change_type in {0, 8}:  # "new_search" & "first_post_change":
-            r_line.ignore = 'y'
-
-        # limit notification sending only for searches started 60 days ago
-        # 60 days – is a compromise and can be reviewed if community votes for another setting
-        try:
-            latest_when_alert = r_line.start_time + datetime.timedelta(days=WINDOW_FOR_NOTIFICATIONS_DAYS)
-            if latest_when_alert < datetime.datetime.now() and r_line.forum_folder not in {333, 305, 334, 306, 190}:
-                r_line.ignore = 'y'
-
-                # DEBUG purposes only
-                notify_admin(f'ignoring old search upd {r_line.forum_search_num} with start time {r_line.start_time}')
-            # FIXME – 03.12.2023 – checking that Samara is not filtered by 60 days
-            if latest_when_alert < datetime.datetime.now() and r_line.forum_folder in {333, 305, 334, 306, 190}:
-                notify_admin(f'☀️ SAMARA >60 {r_line.link}')
-            # FIXME ^^^
-
-        except:  # noqa
-            pass
-
-        logging.info('New Record enriched from Searches')
-
-    except Exception as e:
-        logging.error('Not able to enrich New Records from Searches:')
-        logging.exception(e)
-
-    return r_line
-
-
-def enrich_new_record_with_search_activities(conn: Connection, r_line: LineInChangeLog):
-    """add the lists of current searches' activities to New Record"""
-
-    try:
-        list_of_activities = conn.execute("""SELECT sa.search_forum_num, dsa.activity_name from search_activities sa
-        LEFT JOIN dict_search_activities dsa ON sa.activity_type=dsa.activity_id
-        WHERE
-        sa.activity_type <> '9 - hq closed' AND
-        sa.activity_type <> '8 - info' AND
-        sa.activity_status = 'ongoing' ORDER BY sa.id; """).fetchall()
-
-        # look for matching Forum Search Numbers in New Records List & Search Activities
-        temp_list_of_activities = []
-        for a_line in list_of_activities:
-            # when match is found
-            if r_line.forum_search_num == a_line[0]:
-                temp_list_of_activities.append(a_line[1])
-        r_line.activities = temp_list_of_activities
-
-        logging.info('New Record enriched with Search Activities')
-
-    except Exception as e:
-        logging.error('Not able to enrich New Records with Search Activities: ' + str(e))
-        logging.exception(e)
-
-    return r_line
-
-
-def enrich_new_record_with_managers(conn: Connection, r_line: LineInChangeLog):
-    """add the lists of current searches' managers to the New Record"""
-
-    try:
-        list_of_managers = conn.execute("""
-        SELECT search_forum_num, attribute_name, attribute_value
-        FROM search_attributes
-        WHERE attribute_name='managers'
-        ORDER BY id; """).fetchall()
-
-        # look for matching Forum Search Numbers in New Records List & Search Managers
-        for m_line in list_of_managers:
-            # when match is found
-            if r_line.forum_search_num == m_line[0] and m_line[2] != '[]':
-                r_line.managers = m_line[2]
-
-        logging.info('New Record enriched with Managers')
-
-    except Exception as e:
-        logging.error('Not able to enrich New Records with Managers: ' + str(e))
-        logging.exception(e)
-
-    return r_line
-
-
-def enrich_new_record_with_comments(conn: Connection, type_of_comments, r_line: LineInChangeLog):
-    """add the lists of new comments + new inforg comments to the New Record"""
-
-    try:
-        if type_of_comments == 'all':
-            comments = conn.execute("""SELECT
-                                          comment_url, comment_text, comment_author_nickname, comment_author_link,
-                                          search_forum_num, comment_num, comment_global_num
-                                       FROM comments WHERE notification_sent IS NULL;""").fetchall()
-
-        elif type_of_comments == 'inforg':
-            comments = conn.execute("""SELECT
-                                        comment_url, comment_text, comment_author_nickname, comment_author_link,
-                                        search_forum_num, comment_num, comment_global_num
-                                    FROM comments WHERE notif_sent_inforg IS NULL
-                                    AND LOWER(LEFT(comment_author_nickname,6))='инфорг'
-                                    AND comment_author_nickname!='Инфорг кинологов';""").fetchall()
-        else:
-            comments = None
-
-        # look for matching Forum Search Numbers in New Record List & Comments
-        if r_line.change_type in {3, 4}:  # {'replies_num_change', 'inforg_replies'}:
-            temp_list_of_comments = []
-            for c_line in comments:
-                # when match of Forum Numbers is found
-                if r_line.forum_search_num == c_line[4]:
-                    # check for empty comments
-                    if c_line[1] and c_line[1][0:6].lower() != 'резерв':
-                        comment = Comment()
-                        comment.url = c_line[0]
-                        comment.text = c_line[1]
-
-                        # limitation for extra long messages
-                        if len(comment.text) > 3500:
-                            comment.text = comment.text[:2000] + '...'
-
-                        comment.author_link = c_line[3]
-                        comment.search_forum_num = c_line[4]
-                        comment.num = c_line[5]
-
-                        # some nicknames can be like >>Белый<< which crashes html markup -> we delete symbols
-                        comment.author_nickname = c_line[2]
-                        if comment.author_nickname.find('>') > -1:
-                            comment.author_nickname = comment.author_nickname.replace('>', '')
-                        if comment.author_nickname.find('<') > -1:
-                            comment.author_nickname = comment.author_nickname.replace('<', '')
-
-                        temp_list_of_comments.append(comment)
-
-            if type_of_comments == 'all':
-                r_line.comments = temp_list_of_comments
-            elif type_of_comments == 'inforg':
-                r_line.comments_inforg = temp_list_of_comments
-
-        logging.info(f'New Record enriched with Comments for {type_of_comments}')
-
-    except Exception as e:
-        logging.error(f'Not able to enrich New Records with Comments for {type_of_comments}:')
-        logging.exception(e)
-
-    return r_line
-
-
-def compose_com_msg_on_new_topic(line: LineInChangeLog):
-    """compose the common, user-independent message on new topic (search, event)"""
-
-    start = line.start_time
-    activities = line.activities
-    managers = line.managers
-    clickable_name = line.clickable_name
-    topic_type_id = line.topic_type_id
-
-    line_ignore = None
-    now = datetime.datetime.now()
-    days_since_topic_start = (now - start).days
-
-    # FIXME – temp limitation for only topics - cuz we don't want to filter event.
-    #  Once events messaging will go smooth, this limitation to be removed.
-    #  03.12.2023 – Removed to check
-    # if topic_type_id in {0, 1, 2, 3, 4, 5}:
-    # FIXME ^^^
-
-    if days_since_topic_start >= 2:  # we do not notify users on "new" topics appeared >=2 days ago:
-        return [None, None, None], None, 'y'  # topic to be ignored
-
-    message = MessageNewTopic()
-
-    if topic_type_id == 10:  # new event
-        clickable_name = f'🗓️Новое мероприятие!\n{clickable_name}'
-        message.clickable_name = clickable_name
-        return [clickable_name, None, None], message, line_ignore
-
-    # 1. List of activities – user-independent
-    msg_1 = ''
-    if activities:
-        for line in activities:
-            msg_1 += f'{line}\n'
-    message.activities = msg_1
-
-    # 2. Person
-    msg_2 = clickable_name
-
-    if clickable_name:
-        message.clickable_name = clickable_name
-
-    # 3. List of managers – user-independent
-    msg_3 = ''
-    if managers:
-        try:
-            managers_list = ast.literal_eval(managers)
-            msg_3 += 'Ответственные:'
-            for manager in managers_list:
-                line = add_tel_link(manager)
-                msg_3 += f'\n &#8226; {line}'
-
-        except Exception as e:
-            logging.error('Not able to compose New Search Message text with Managers: ' + str(e))
-            logging.exception(e)
-
-        message.managers = msg_3
-
-    logging.info('msg 2 + msg 1 + msg 3: ' + str(msg_2) + ' // ' + str(msg_1) + ' // ' + str(msg_3))
-
-    return [msg_2, msg_1, msg_3], message, line_ignore  # 1 - person, 2 - activities, 3 - managers
-
-
-def compose_com_msg_on_status_change(line: LineInChangeLog):
-    """compose the common, user-independent message on search status change"""
-
-    status = line.status
-    region = line.region
-    clickable_name = line.clickable_name
-
-    if status == 'Ищем':
-        status_info = 'Поиск возобновлён'
-    elif status == 'Завершен':
-        status_info = 'Поиск завершён'
-    else:
-        status_info = status
-
-    msg_1 = f'{status_info} – изменение статуса по {clickable_name}'
-
-    msg_2 = f' ({region})' if region else None
-
-    return msg_1, msg_2
-
-
-def compose_com_msg_on_new_comments(line: LineInChangeLog):
-    """compose the common, user-independent message on ALL search comments change"""
-
-    url_prefix = 'https://lizaalert.org/forum/memberlist.php?mode=viewprofile&u='
-    activity = 'мероприятию' if line.topic_type_id == 10 else 'поиску'
-
-    msg = ''
-    for comment in line.comments:
-        if comment.text:
-            comment_text = f'{comment.text[:500]}...' if len(comment.text) > 500 else comment.text
-
-            comment_text = add_tel_link(comment_text)
-            code_pos = comment_text.find('<code>')
-            text_before_code_pos = comment_text[:code_pos]
-            text_from_code_pos = comment_text[code_pos:]
-
-            msg += (
-                f' &#8226; <a href="{url_prefix}{comment.author_link}">{comment.author_nickname}</a>: '
-                f'<i>«<a href="{comment.url}">{text_before_code_pos}</a>{text_from_code_pos}»</i>\n'
-            )
-
-    msg = f'Новые комментарии по {activity} {line.clickable_name}:\n{msg}' if msg else ''
-
-    return msg, None
-
-
-def compose_com_msg_on_inforg_comments(line: LineInChangeLog):
-    """compose the common, user-independent message on INFORG search comments change"""
-
-    # region_to_show = f' ({region})' if region else ''
-    url_prefix = 'https://lizaalert.org/forum/memberlist.php?mode=viewprofile&u='
-
-    msg_1, msg_2 = None, None
-    msg_3 = ''
-    if line.comments_inforg:
-        author = None
-        for comment in line.comments_inforg:
-            if comment.text:
-                author = f'<a href="{url_prefix}{comment.author_link}">{comment.author_nickname}</a>'
-                msg_3 += f'<i>«<a href="{comment.url}">{comment.text}</a>»</i>\n'
-
-        msg_3 = f':\n{msg_3}'
-
-        msg_1 = f'{line.topic_emoji}Сообщение от {author} по {line.clickable_name}'
-        if line.region:
-            msg_2 = f' ({line.region})'
-
-    return msg_1, msg_2, msg_3
-
-
-def compose_com_msg_on_title_change(line: LineInChangeLog):
-    """compose the common, user-independent message on search title change"""
-
-    activity = 'мероприятия' if line.topic_type_id == 10 else 'поиска'
-    msg = f'{line.title} – обновление заголовка {activity} по {line.clickable_name}'
-
-    return msg
-
-
-def get_coords_from_list(input_list):
-    """get the list of coords [lat, lon] for the input list of strings"""
-
-    if not input_list:
-        return None, None
-
-    coords_in_text = []
-
-    for line in input_list:
-        coords_in_text += re.findall(coord_pattern, line)
-
-    if not (coords_in_text and len(coords_in_text) == 1):
-        return None, None
-
-    coords_as_text = coords_in_text[0]
-    coords_as_list = re.split(r'(?<=\d)[\s,]+(?=\d)', coords_as_text)
-
-    if len(coords_as_list) != 2:
-        return None, None
-
-    try:
-        got_lat = coord_format.format(float(coords_as_list[0]))
-        got_lon = coord_format.format(float(coords_as_list[1]))
-        return got_lat, got_lon
-
-    except Exception as e:  # noqa
-        logging.exception(e)
-        return None, None
-
-
-def compose_com_msg_on_first_post_change(record: LineInChangeLog):
-    """compose the common, user-independent message on search first post change"""
-
-    message = record.new_value
-    clickable_name = record.clickable_name
-    old_lat = record.search_latitude
-    old_lon = record.search_longitude
-    type_id = record.topic_type_id
-
-    region = '{region}'  # to be filled in on a stage of Individual Message preparation
-    list_of_additions = None
-    list_of_deletions = None
-
-    if message and message[0] == '{':
-        message_dict = ast.literal_eval(message) if message else {}
-
-        if 'del' in message_dict.keys() and 'add' in message_dict.keys():
-            message = ''
-            list_of_deletions = message_dict['del']
-            if list_of_deletions:
-                message += '➖Удалено:\n<s>'
-                for line in list_of_deletions:
-                    message += f'{line}\n'
-                message += '</s>'
-
-            list_of_additions = message_dict['add']
-            if list_of_additions:
-                if message:
-                    message += '\n'
-                message += '➕Добавлено:\n'
-                for line in list_of_additions:
-                    # majority of coords in RU: lat in [30-80], long in [20-180]
-                    updated_line = re.sub(coord_pattern, '<code>\g<0></code>', line)
-                    message += f'{updated_line}\n'
-        else:
-            message = message_dict['message']
-
-    coord_change_phrase = ''
-    add_lat, add_lon = get_coords_from_list(list_of_additions)
-    del_lat, del_lon = get_coords_from_list(list_of_deletions)
-
-    if old_lat and old_lon:
-        old_lat = coord_format.format(float(old_lat))
-        old_lon = coord_format.format(float(old_lon))
-
-    if add_lat and add_lon and del_lat and del_lon and (add_lat != del_lat or add_lon != del_lon):
-        distance, direction = define_dist_and_dir_to_search(del_lat, del_lon, add_lat, add_lon)
-    elif add_lat and add_lon and del_lat and del_lon and (add_lat == del_lat and add_lon == del_lon):
-        distance, direction = None, None
-    elif add_lat and add_lon and old_lat and old_lon and (add_lat != old_lat or add_lon != old_lon):
-        distance, direction = define_dist_and_dir_to_search(old_lat, old_lon, add_lat, add_lon)
-    else:
-        distance, direction = None, None
-
-    if distance and direction:
-        if distance >= 1:
-            coord_change_phrase = f'\n\nКоординаты сместились на ~{int(distance)} км {direction}'
-        else:
-            coord_change_phrase = f'\n\nКоординаты сместились на ~{int(distance * 1000)} метров {direction}'
-
-    if not message:
-        return ''
-
-    if type_id in {0, 1, 2, 3, 4, 5}:
-        resulting_message = (
-            f'{record.topic_emoji}🔀Изменения в первом посте по {clickable_name}{region}:\n\n{message}'
-            f'{coord_change_phrase}'
-        )
-    elif type_id == 10:
-        resulting_message = (
-            f'{record.topic_emoji}Изменения в описании мероприятия {clickable_name}{region}:\n\n{message}'
-        )
-    else:
-        resulting_message = ''
-
-    return resulting_message
-
-
-def add_tel_link(incoming_text: str, modifier: str = 'all') -> str:
-    """check is text contains phone number and replaces it with clickable version, also removes [tel] tags"""
-
-    outcome_text = None
-
-    # Modifier for all users
-    if modifier == 'all':
-        outcome_text = incoming_text
-        nums = re.findall(r'(?:\+7|7|8)\s?[\s\-(]?\s?\d{3}[\s\-)]?\s?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}', incoming_text)
-        for num in nums:
-            outcome_text = outcome_text.replace(num, '<code>' + str(num) + '</code>')
-
-        phpbb_tags_to_delete = {'[tel]', '[/tel]'}
-        for tag in phpbb_tags_to_delete:
-            outcome_text = outcome_text.replace(tag, '', 5)
-
-    # Modifier for Admin
-    else:
-        pass
-
-    return outcome_text
-
-
-def enrich_new_record_with_clickable_name(line: LineInChangeLog):
-    """add clickable name to the record"""
-
-    if line.topic_type_id in {0, 1, 2, 3, 4, 5}:  # if it's search
-        if line.display_name:
-            line.clickable_name = f'<a href="{line.link}">{line.display_name}</a>'
-        else:
-            if line.name:
-                name = line.name
-            else:
-                name = 'БВП'
-            age_info = f' {line.age_wording}' if (name[0].isupper() and line.age and line.age != 0) else ''
-            line.clickable_name = f'<a href="{line.link}">{name}{age_info}</a>'
-    else:  # if it's event or something else
-        line.clickable_name = f'<a href="{line.link}">{line.title}</a>'
-
-    return line
-
-
-def enrich_new_record_with_emoji(line: LineInChangeLog):
-    """add specific emoji based on topic (search) type"""
-
-    topic_type_id = line.topic_type_id
-    topic_type_dict = {
-        0: '',  # search regular
-        1: '🏠',  # search reverse
-        2: '🚓',  # search patrol
-        3: '🎓',  # search training
-        4: 'ℹ️',  # search info support
-        5: '🚨',  # search resonance
-        10: '📝',  # event
-    }
-    if topic_type_id:
-        line.topic_emoji = topic_type_dict[topic_type_id]
-    else:
-        line.topic_emoji = ''
-
-    return line
-
-
-def enrich_new_record_with_com_message_texts(line: LineInChangeLog) -> LineInChangeLog:
-    """add user-independent message text to the New Records"""
-
-    last_line = None
-
-    try:
-        last_line = line
-
-        if line.change_type == 0:  # new topic: new search, new event
-            line.message, line.message_object, line.ignore = compose_com_msg_on_new_topic(line)
-        elif line.change_type == 1 and line.topic_type_id in {0, 1, 2, 3, 4, 5}:  # status change for search:
-            line.message = compose_com_msg_on_status_change(line)
-        elif line.change_type == 2:  # 'title_change':
-            line.message = compose_com_msg_on_title_change(line)
-        elif line.change_type == 3:  # 'replies_num_change':
-            line.message = compose_com_msg_on_new_comments(line)
-        elif line.change_type == 4:  # 'inforg_replies':
-            line.message = compose_com_msg_on_inforg_comments(line)
-        elif line.change_type == 8:  # first_post_change
-            line.message = compose_com_msg_on_first_post_change(line)
-
-        logging.info('New Record enriched with common Message Text')
-
-    except Exception as e:
-        logging.error('Not able to enrich New Record with common Message Texts:' + str(e))
-        logging.exception(e)
-        logging.info('FOR DEBUG OF ERROR – line is: ' + str(last_line))
-
-    return line
 
 
 def compose_users_list_from_users(conn: Connection, new_record: LineInChangeLog) -> List:
@@ -1075,61 +192,6 @@ def compose_users_list_from_users(conn: Connection, new_record: LineInChangeLog)
     return list_of_users
 
 
-def enrich_users_list_with_age_periods(conn, list_of_users):
-    """add the data on Lost people age notification preferences from user_pref_age into users List"""
-
-    try:
-        notif_prefs = conn.execute("""SELECT user_id, period_min, period_max FROM user_pref_age;""").fetchall()
-
-        if not notif_prefs:
-            return list_of_users
-
-        number_of_enrichments_old = 0
-        number_of_enrichments = 0
-        for np_line in notif_prefs:
-            new_period = [np_line[1], np_line[2]]
-
-            for u_line in list_of_users:
-                if u_line.user_id == np_line[0]:
-                    u_line.age_periods.append(new_period)
-                    number_of_enrichments += 1
-
-        logging.info(f'Users List enriched with Age Prefs, OLD num of enrichments is {number_of_enrichments_old}')
-        logging.info(f'Users List enriched with Age Prefs, num of enrichments is {number_of_enrichments}')
-
-    except Exception as e:
-        logging.info('Not able to enrich Users List with Age Prefs')
-        logging.exception(e)
-
-    return list_of_users
-
-
-def enrich_users_list_with_radius(conn, list_of_users):
-    """add the data on distance notification preferences from user_pref_radius into users List"""
-
-    try:
-        notif_prefs = conn.execute("""SELECT user_id, radius FROM user_pref_radius;""").fetchall()
-
-        if not notif_prefs:
-            return None
-
-        number_of_enrichments = 0
-        for np_line in notif_prefs:
-            for u_line in list_of_users:
-                if u_line.user_id == np_line[0]:
-                    u_line.radius = int(round(np_line[1], 0))
-                    number_of_enrichments += 1
-                    print(f'TEMP - RADIUS user_id = {u_line.user_id}, radius = {u_line.radius}')
-
-        logging.info(f'Users List enriched with Radius, num of enrichments is {number_of_enrichments}')
-
-    except Exception as e:
-        logging.info('Not able to enrich Users List with Radius')
-        logging.exception(e)
-
-    return list_of_users
-
-
 def get_list_of_admins_and_testers(conn):
     """get the list of users with admin & testers roles from PSQL"""
 
@@ -1152,6 +214,345 @@ def get_list_of_admins_and_testers(conn):
         logging.exception(e)
 
     return list_of_admins, list_of_testers
+
+
+def save_to_sql_notif_by_user(
+    conn,
+    mailing_id_,
+    user_id_,
+    message_,
+    message_without_html_,
+    message_type_,
+    message_params_,
+    message_group_id_,
+    change_log_id_,
+):
+    """save to sql table notif_by_user the new message"""
+
+    # record into SQL table notif_by_user
+    sql_text_ = sqlalchemy.text("""
+                        INSERT INTO notif_by_user (
+                            mailing_id,
+                            user_id,
+                            message_content,
+                            message_text,
+                            message_type,
+                            message_params,
+                            message_group_id,
+                            change_log_id,
+                            created)
+                        VALUES (:a, :b, :c, :d, :e, :f, :g, :h, :i);
+                        """)
+
+    conn.execute(
+        sql_text_,
+        a=mailing_id_,
+        b=user_id_,
+        c=message_,
+        d=message_without_html_,
+        e=message_type_,
+        f=message_params_,
+        g=message_group_id_,
+        h=change_log_id_,
+        i=datetime.datetime.now(),
+    )
+
+    return None
+
+
+def get_from_sql_if_was_notified_already(conn, user_id_, message_type_, change_log_id_):
+    """check in sql if this user was already notified re this change_log record
+    works for every user during iterations over users"""
+
+    sql_text_ = sqlalchemy.text("""
+        SELECT EXISTS (
+            SELECT
+                message_id
+            FROM
+                notif_by_user
+            WHERE
+                completed IS NOT NULL AND
+                user_id=:b AND
+                message_type=:c AND
+                change_log_id=:a
+        )
+        /*action='get_from_sql_if_was_notified_already_new'*/
+        ;
+    """)
+
+    user_was_already_notified = conn.execute(sql_text_, a=change_log_id_, b=user_id_, c=message_type_).fetchone()[0]
+
+    return user_was_already_notified
+
+
+def get_from_sql_list_of_users_with_prepared_message(conn, change_log_id_):
+    """check what is the list of users for whom we already composed messages for the given change_log record"""
+
+    sql_text_ = sqlalchemy.text("""
+        SELECT
+            user_id
+        FROM
+            notif_by_user
+        WHERE
+            created IS NOT NULL AND
+            change_log_id=:a
+
+        /*action='get_from_sql_list_of_users_with_already_composed_messages 2.0'*/
+        ;
+        """)
+
+    raw_data_ = conn.execute(sql_text_, a=change_log_id_).fetchall()
+    # TODO: to delete
+    logging.info('list of user with composed messages:')
+    logging.info(raw_data_)
+
+    users_who_were_composed = []
+    for line in raw_data_:
+        users_who_were_composed.append(line[0])
+
+    return users_who_were_composed
+
+
+def get_the_new_group_id(conn):
+    """define the max message_group_id in notif_by_user and add +1"""
+
+    raw_data_ = conn.execute("""SELECT MAX(message_group_id) FROM notif_by_user
+    /*action='get_the_new_group_id'*/
+    ;""").fetchone()
+
+    if raw_data_[0]:
+        next_id = raw_data_[0] + 1
+    else:
+        next_id = 0
+
+    return next_id
+
+
+def process_mailing_id(conn, change_log_item, topic_id, change_type):
+    """TODO"""
+
+    # check if this change_log record was somehow processed
+    sql_text = sqlalchemy.text("""SELECT EXISTS (SELECT * FROM notif_mailings WHERE change_log_id=:a);""")
+    record_was_processed_already = conn.execute(sql_text, a=change_log_item).fetchone()[0]
+
+    # TODO: DEBUG
+    if record_was_processed_already:
+        logging.info('[comp_notif]: 2 MAILINGS for 1 CHANGE LOG RECORD identified')
+    # TODO: DEBUG
+
+    # record into SQL table notif_mailings
+    sql_text = sqlalchemy.text("""
+                    INSERT INTO notif_mailings (topic_id, source_script, mailing_type, change_log_id)
+                    VALUES (:a, :b, :c, :d)
+                    RETURNING mailing_id;
+                    """)
+    raw_data = conn.execute(sql_text, a=topic_id, b='notifications_script', c=change_type, d=change_log_item).fetchone()
+
+    mail_id = raw_data[0]
+    logging.info(f'mailing_id = {mail_id}')
+
+    users_should_not_be_informed = get_from_sql_list_of_users_with_prepared_message(conn, change_log_item)
+    logging.info('users_who_should_not_be_informed:')
+    logging.info(users_should_not_be_informed)
+    logging.info('in total ' + str(len(users_should_not_be_informed)))
+
+    # TODO: do we need this table at all?
+    # record into SQL table notif_mailings_status
+    sql_text = sqlalchemy.text("""
+                                        INSERT INTO notif_mailing_status (mailing_id, event, event_timestamp)
+                                        VALUES (:a, :b, :c);
+                                        """)
+    conn.execute(sql_text, a=mail_id, b='created', c=datetime.datetime.now())
+
+    return users_should_not_be_informed, record_was_processed_already, mail_id
+
+
+def check_if_age_requirements_met(search_ages, user_ages):
+    """check if user wants to receive notifications for such age"""
+
+    requirements_met = False
+
+    if not user_ages or not search_ages:
+        return True
+
+    for age_rage in user_ages:
+        user_age_range_start = age_rage[0]
+        user_age_range_finish = age_rage[1]
+
+        for i in range(user_age_range_start, user_age_range_finish + 1):
+            for j in range(search_ages[0], search_ages[1] + 1):
+                if i == j:
+                    requirements_met = True
+                    break
+            else:
+                continue
+            break
+
+    return requirements_met
+
+
+def crop_user_list(conn, users_list_incoming, users_should_not_be_informed, record):
+    """crop user_list to only affected users"""
+
+    users_list_outcome = users_list_incoming
+
+    # 1. INFORG 2X notifications. crop the list of users, excluding Users who receives all types of notifications
+    # (otherwise it will be doubling for them)
+    temp_user_list = []
+    if record.change_type != 4:
+        logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(users_list_outcome)}')
+    else:
+        for user_line in users_list_outcome:
+            # if this record is about inforg_comments and user already subscribed to all comments
+            if not user_line.all_notifs:
+                temp_user_list.append(user_line)
+                logging.info(
+                    f'Inforg 2x CHECK for {user_line.user_id} is OK, record {record.change_type}, '
+                    f'user {user_line.user_id} {user_line.all_notifs}. '
+                    f'record {record.forum_search_num}'
+                )
+            else:
+                logging.info(
+                    f'Inforg 2x CHECK for {user_line.user_id} is FAILED, record {record.change_type}, '
+                    f'user {user_line.user_id} {user_line.all_notifs}. '
+                    f'record {record.forum_search_num}'
+                )
+        logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(temp_user_list)}')
+        users_list_outcome = temp_user_list
+
+    # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
+    temp_user_list = []
+    if not (record.age_min or record.age_max):
+        logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
+        return users_list_outcome
+
+    search_age_range = [record.age_min, record.age_max]
+
+    for user_line in users_list_outcome:
+        user_age_ranges = user_line.age_periods
+        age_requirements_met = check_if_age_requirements_met(search_age_range, user_age_ranges)
+        if age_requirements_met:
+            temp_user_list.append(user_line)
+            logging.info(
+                f'AGE CHECK for {user_line.user_id} is OK, record {search_age_range}, '
+                f'user {user_age_ranges}. record {record.forum_search_num}'
+            )
+        else:
+            logging.info(
+                f'AGE CHECK for {user_line.user_id} is FAIL, record {search_age_range}, '
+                f'user {user_age_ranges}. record {record.forum_search_num}'
+            )
+
+    logging.info(f'User List crop due to ages: {len(users_list_outcome)} --> {len(temp_user_list)}')
+    users_list_outcome = temp_user_list
+
+    # 3. RADIUS. crop the list of users, excluding Users who does want to receive notifications within the radius
+    try:
+        search_lat = record.search_latitude
+        search_lon = record.search_longitude
+        list_of_city_coords = None
+        if record.city_locations and record.city_locations != 'None':
+            non_geolocated = [x for x in eval(record.city_locations) if isinstance(x, str)]
+            list_of_city_coords = eval(record.city_locations) if not non_geolocated else None
+
+        temp_user_list = []
+
+        # CASE 3.1. When exact coordinates of Search Headquarters are indicated
+        if search_lat and search_lon:
+            for user_line in users_list_outcome:
+                if not (user_line.radius and user_line.user_latitude and user_line.user_longitude):
+                    temp_user_list.append(user_line)
+                    continue
+                user_lat = user_line.user_latitude
+                user_lon = user_line.user_longitude
+                actual_distance, direction = define_dist_and_dir_to_search(search_lat, search_lon, user_lat, user_lon)
+                actual_distance = int(actual_distance)
+                if actual_distance <= user_line.radius:
+                    temp_user_list.append(user_line)
+
+        # CASE 3.2. When exact coordinates of a Place are geolocated
+        elif list_of_city_coords:
+            for user_line in users_list_outcome:
+                if not (user_line.radius and user_line.user_latitude and user_line.user_longitude):
+                    temp_user_list.append(user_line)
+                    continue
+                user_lat = user_line.user_latitude
+                user_lon = user_line.user_longitude
+
+                for city_coords in list_of_city_coords:
+                    search_lat, search_lon = city_coords
+                    actual_distance, direction = define_dist_and_dir_to_search(
+                        search_lat, search_lon, user_lat, user_lon
+                    )
+                    actual_distance = int(actual_distance)
+                    if actual_distance <= user_line.radius:
+                        temp_user_list.append(user_line)
+                        break
+
+        # CASE 3.3. No coordinates available
+        else:
+            temp_user_list = users_list_outcome
+
+        logging.info(f'User List crop due to radius: {len(users_list_outcome)} --> {len(temp_user_list)}')
+        users_list_outcome = temp_user_list
+
+    except Exception as e:
+        logging.info(f'TEMP - exception radius: {repr(e)}')
+        logging.exception(e)
+
+    # 4. DOUBLING. crop the list of users, excluding Users who were already notified on this change_log_id
+    temp_user_list = []
+    for user_line in users_list_outcome:
+        if user_line.user_id not in users_should_not_be_informed:
+            temp_user_list.append(user_line)
+    logging.info(f'User List crop due to doubling: {len(users_list_outcome)} --> {len(temp_user_list)}')
+    users_list_outcome = temp_user_list
+
+    # 5. FOLLOW SEARCH. crop the list of users, excluding Users who is not following this search
+    logging.info(f'Crop user list step 5: forum_search_num=={record.forum_search_num}')
+    try:
+        temp_user_list = []
+        sql_text_ = sqlalchemy.text("""
+        SELECT u.user_id FROM users u
+        LEFT JOIN user_pref_search_filtering upsf ON upsf.user_id=u.user_id and 'whitelist' = ANY(upsf.filter_name)
+        WHERE upsf.filter_name is not null AND NOT
+        (
+            (	exists(select 1 from user_pref_search_whitelist upswls
+                    JOIN searches s ON search_forum_num=upswls.search_id 
+                    WHERE upswls.user_id=u.user_id and upswls.search_id != :a and upswls.search_following_mode=:b
+                    and s.status != 'СТОП')
+                AND
+                not exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:b)
+            ) 
+            OR
+            exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:c)
+        )
+        OR upsf.filter_name is null
+        ;
+        """)
+        rows = conn.execute(sql_text_, a=record.forum_search_num, b='👀 ', c='❌ ').fetchall()
+        logging.info(f'Crop user list step 5: len(rows)=={len(rows)}')
+
+        users_following = []
+        for row in rows:
+            users_following.append(row[0])
+
+        temp_user_list = []
+        for user_line in users_list_outcome:
+            if user_line.user_id in users_following:
+                temp_user_list.append(user_line)
+
+        logging.info(
+            f'Crop user list step 5: User List crop due to whitelisting: {len(users_list_outcome)} --> {len(temp_user_list)}'
+        )
+        # if len(users_list_outcome) - len(temp_user_list) <=20:
+        #     logging.info(f'Crop user list step 5: cropped users: {users_list_outcome - temp_user_list}')
+        users_list_outcome = temp_user_list
+    except Exception as ee:
+        logging.info('exception happened')
+        logging.exception(ee)
+
+    return users_list_outcome
 
 
 def record_notification_statistics(conn):
@@ -1184,342 +585,6 @@ def record_notification_statistics(conn):
 
 def iterate_over_all_users(conn, admins_list, new_record, list_of_users, function_id) -> LineInChangeLog:
     """initiates a full cycle for all messages composition for all the users"""
-
-    def save_to_sql_notif_by_user(
-        mailing_id_,
-        user_id_,
-        message_,
-        message_without_html_,
-        message_type_,
-        message_params_,
-        message_group_id_,
-        change_log_id_,
-    ):
-        """save to sql table notif_by_user the new message"""
-
-        # record into SQL table notif_by_user
-        sql_text_ = sqlalchemy.text("""
-                            INSERT INTO notif_by_user (
-                                mailing_id,
-                                user_id,
-                                message_content,
-                                message_text,
-                                message_type,
-                                message_params,
-                                message_group_id,
-                                change_log_id,
-                                created)
-                            VALUES (:a, :b, :c, :d, :e, :f, :g, :h, :i);
-                            """)
-
-        conn.execute(
-            sql_text_,
-            a=mailing_id_,
-            b=user_id_,
-            c=message_,
-            d=message_without_html_,
-            e=message_type_,
-            f=message_params_,
-            g=message_group_id_,
-            h=change_log_id_,
-            i=datetime.datetime.now(),
-        )
-
-        return None
-
-    def get_from_sql_if_was_notified_already(user_id_, message_type_, change_log_id_):
-        """check in sql if this user was already notified re this change_log record
-        works for every user during iterations over users"""
-
-        sql_text_ = sqlalchemy.text("""
-            SELECT EXISTS (
-                SELECT
-                    message_id
-                FROM
-                    notif_by_user
-                WHERE
-                    completed IS NOT NULL AND
-                    user_id=:b AND
-                    message_type=:c AND
-                    change_log_id=:a
-            )
-            /*action='get_from_sql_if_was_notified_already_new'*/
-            ;
-        """)
-
-        user_was_already_notified = conn.execute(sql_text_, a=change_log_id_, b=user_id_, c=message_type_).fetchone()[0]
-
-        return user_was_already_notified
-
-    def get_from_sql_list_of_users_with_prepared_message(change_log_id_):
-        """check what is the list of users for whom we already composed messages for the given change_log record"""
-
-        sql_text_ = sqlalchemy.text("""
-            SELECT
-                user_id
-            FROM
-                notif_by_user
-            WHERE
-                created IS NOT NULL AND
-                change_log_id=:a
-
-            /*action='get_from_sql_list_of_users_with_already_composed_messages 2.0'*/
-            ;
-            """)
-
-        raw_data_ = conn.execute(sql_text_, a=change_log_id_).fetchall()
-        # TODO: to delete
-        logging.info('list of user with composed messages:')
-        logging.info(raw_data_)
-
-        users_who_were_composed = []
-        for line in raw_data_:
-            users_who_were_composed.append(line[0])
-
-        return users_who_were_composed
-
-    def get_the_new_group_id():
-        """define the max message_group_id in notif_by_user and add +1"""
-
-        raw_data_ = conn.execute("""SELECT MAX(message_group_id) FROM notif_by_user
-        /*action='get_the_new_group_id'*/
-        ;""").fetchone()
-
-        if raw_data_[0]:
-            next_id = raw_data_[0] + 1
-        else:
-            next_id = 0
-
-        return next_id
-
-    def process_mailing_id(change_log_item):
-        """TODO"""
-
-        # check if this change_log record was somehow processed
-        sql_text = sqlalchemy.text("""SELECT EXISTS (SELECT * FROM notif_mailings WHERE change_log_id=:a);""")
-        record_was_processed_already = conn.execute(sql_text, a=change_log_item).fetchone()[0]
-
-        # TODO: DEBUG
-        if record_was_processed_already:
-            logging.info('[comp_notif]: 2 MAILINGS for 1 CHANGE LOG RECORD identified')
-        # TODO: DEBUG
-
-        # record into SQL table notif_mailings
-        sql_text = sqlalchemy.text("""
-                        INSERT INTO notif_mailings (topic_id, source_script, mailing_type, change_log_id)
-                        VALUES (:a, :b, :c, :d)
-                        RETURNING mailing_id;
-                        """)
-        raw_data = conn.execute(
-            sql_text, a=topic_id, b='notifications_script', c=change_type, d=change_log_item
-        ).fetchone()
-
-        mail_id = raw_data[0]
-        logging.info(f'mailing_id = {mail_id}')
-
-        users_should_not_be_informed = get_from_sql_list_of_users_with_prepared_message(change_log_item)
-        logging.info('users_who_should_not_be_informed:')
-        logging.info(users_should_not_be_informed)
-        logging.info('in total ' + str(len(users_should_not_be_informed)))
-
-        # TODO: do we need this table at all?
-        # record into SQL table notif_mailings_status
-        sql_text = sqlalchemy.text("""
-                                            INSERT INTO notif_mailing_status (mailing_id, event, event_timestamp)
-                                            VALUES (:a, :b, :c);
-                                            """)
-        conn.execute(sql_text, a=mail_id, b='created', c=datetime.datetime.now())
-
-        return users_should_not_be_informed, record_was_processed_already, mail_id
-
-    def check_if_age_requirements_met(search_ages, user_ages):
-        """check if user wants to receive notifications for such age"""
-
-        requirements_met = False
-
-        if not user_ages or not search_ages:
-            return True
-
-        for age_rage in user_ages:
-            user_age_range_start = age_rage[0]
-            user_age_range_finish = age_rage[1]
-
-            for i in range(user_age_range_start, user_age_range_finish + 1):
-                for j in range(search_ages[0], search_ages[1] + 1):
-                    if i == j:
-                        requirements_met = True
-                        break
-                else:
-                    continue
-                break
-
-        return requirements_met
-
-    def crop_user_list(users_list_incoming, users_should_not_be_informed, record):
-        """crop user_list to only affected users"""
-
-        users_list_outcome = users_list_incoming
-
-        # 1. INFORG 2X notifications. crop the list of users, excluding Users who receives all types of notifications
-        # (otherwise it will be doubling for them)
-        temp_user_list = []
-        if record.change_type != 4:
-            logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(users_list_outcome)}')
-        else:
-            for user_line in users_list_outcome:
-                # if this record is about inforg_comments and user already subscribed to all comments
-                if not user_line.all_notifs:
-                    temp_user_list.append(user_line)
-                    logging.info(
-                        f'Inforg 2x CHECK for {user_line.user_id} is OK, record {record.change_type}, '
-                        f'user {user_line.user_id} {user_line.all_notifs}. '
-                        f'record {record.forum_search_num}'
-                    )
-                else:
-                    logging.info(
-                        f'Inforg 2x CHECK for {user_line.user_id} is FAILED, record {record.change_type}, '
-                        f'user {user_line.user_id} {user_line.all_notifs}. '
-                        f'record {record.forum_search_num}'
-                    )
-            logging.info(f'User List crop due to Inforg 2x: {len(users_list_outcome)} --> {len(temp_user_list)}')
-            users_list_outcome = temp_user_list
-
-        # 2. AGES. crop the list of users, excluding Users who does not want to receive notifications for such Ages
-        temp_user_list = []
-        if not (record.age_min or record.age_max):
-            logging.info('User List crop due to ages: no changes, there were no age_min and max for search')
-            return users_list_outcome
-
-        search_age_range = [record.age_min, record.age_max]
-
-        for user_line in users_list_outcome:
-            user_age_ranges = user_line.age_periods
-            age_requirements_met = check_if_age_requirements_met(search_age_range, user_age_ranges)
-            if age_requirements_met:
-                temp_user_list.append(user_line)
-                logging.info(
-                    f'AGE CHECK for {user_line.user_id} is OK, record {search_age_range}, '
-                    f'user {user_age_ranges}. record {record.forum_search_num}'
-                )
-            else:
-                logging.info(
-                    f'AGE CHECK for {user_line.user_id} is FAIL, record {search_age_range}, '
-                    f'user {user_age_ranges}. record {record.forum_search_num}'
-                )
-
-        logging.info(f'User List crop due to ages: {len(users_list_outcome)} --> {len(temp_user_list)}')
-        users_list_outcome = temp_user_list
-
-        # 3. RADIUS. crop the list of users, excluding Users who does want to receive notifications within the radius
-        try:
-            search_lat = record.search_latitude
-            search_lon = record.search_longitude
-            list_of_city_coords = None
-            if record.city_locations and record.city_locations != 'None':
-                non_geolocated = [x for x in eval(record.city_locations) if isinstance(x, str)]
-                list_of_city_coords = eval(record.city_locations) if not non_geolocated else None
-
-            temp_user_list = []
-
-            # CASE 3.1. When exact coordinates of Search Headquarters are indicated
-            if search_lat and search_lon:
-                for user_line in users_list_outcome:
-                    if not (user_line.radius and user_line.user_latitude and user_line.user_longitude):
-                        temp_user_list.append(user_line)
-                        continue
-                    user_lat = user_line.user_latitude
-                    user_lon = user_line.user_longitude
-                    actual_distance, direction = define_dist_and_dir_to_search(
-                        search_lat, search_lon, user_lat, user_lon
-                    )
-                    actual_distance = int(actual_distance)
-                    if actual_distance <= user_line.radius:
-                        temp_user_list.append(user_line)
-
-            # CASE 3.2. When exact coordinates of a Place are geolocated
-            elif list_of_city_coords:
-                for user_line in users_list_outcome:
-                    if not (user_line.radius and user_line.user_latitude and user_line.user_longitude):
-                        temp_user_list.append(user_line)
-                        continue
-                    user_lat = user_line.user_latitude
-                    user_lon = user_line.user_longitude
-
-                    for city_coords in list_of_city_coords:
-                        search_lat, search_lon = city_coords
-                        actual_distance, direction = define_dist_and_dir_to_search(
-                            search_lat, search_lon, user_lat, user_lon
-                        )
-                        actual_distance = int(actual_distance)
-                        if actual_distance <= user_line.radius:
-                            temp_user_list.append(user_line)
-                            break
-
-            # CASE 3.3. No coordinates available
-            else:
-                temp_user_list = users_list_outcome
-
-            logging.info(f'User List crop due to radius: {len(users_list_outcome)} --> {len(temp_user_list)}')
-            users_list_outcome = temp_user_list
-
-        except Exception as e:
-            logging.info(f'TEMP - exception radius: {repr(e)}')
-            logging.exception(e)
-
-        # 4. DOUBLING. crop the list of users, excluding Users who were already notified on this change_log_id
-        temp_user_list = []
-        for user_line in users_list_outcome:
-            if user_line.user_id not in users_should_not_be_informed:
-                temp_user_list.append(user_line)
-        logging.info(f'User List crop due to doubling: {len(users_list_outcome)} --> {len(temp_user_list)}')
-        users_list_outcome = temp_user_list
-
-        # 5. FOLLOW SEARCH. crop the list of users, excluding Users who is not following this search
-        logging.info(f'Crop user list step 5: forum_search_num=={record.forum_search_num}')
-        try:
-            temp_user_list = []
-            sql_text_ = sqlalchemy.text("""
-            SELECT u.user_id FROM users u
-            LEFT JOIN user_pref_search_filtering upsf ON upsf.user_id=u.user_id and 'whitelist' = ANY(upsf.filter_name)
-            WHERE upsf.filter_name is not null AND NOT
-            (
-                (	exists(select 1 from user_pref_search_whitelist upswls
-                        JOIN searches s ON search_forum_num=upswls.search_id 
-                        WHERE upswls.user_id=u.user_id and upswls.search_id != :a and upswls.search_following_mode=:b
-                        and s.status != 'СТОП')
-					AND
-					not exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:b)
-				) 
-				OR
-                exists(select 1 from user_pref_search_whitelist upswls WHERE upswls.user_id=u.user_id and upswls.search_id = :a and upswls.search_following_mode=:c)
-            )
-            OR upsf.filter_name is null
-            ;
-            """)
-            rows = conn.execute(sql_text_, a=record.forum_search_num, b='👀 ', c='❌ ').fetchall()
-            logging.info(f'Crop user list step 5: len(rows)=={len(rows)}')
-
-            users_following = []
-            for row in rows:
-                users_following.append(row[0])
-
-            temp_user_list = []
-            for user_line in users_list_outcome:
-                if user_line.user_id in users_following:
-                    temp_user_list.append(user_line)
-
-            logging.info(
-                f'Crop user list step 5: User List crop due to whitelisting: {len(users_list_outcome)} --> {len(temp_user_list)}'
-            )
-            # if len(users_list_outcome) - len(temp_user_list) <=20:
-            #     logging.info(f'Crop user list step 5: cropped users: {users_list_outcome - temp_user_list}')
-            users_list_outcome = temp_user_list
-        except Exception as ee:
-            logging.info('exception happened')
-            logging.exception(ee)
-
-        return users_list_outcome
-
     global stat_list_of_recipients
 
     stat_list_of_recipients = []  # still not clear why w/o it – saves data from prev iterations
@@ -1542,10 +607,10 @@ def iterate_over_all_users(conn, admins_list, new_record, list_of_users, functio
         topic_type_id = new_record.topic_type_id
 
         users_who_should_not_be_informed, this_record_was_processed_already, mailing_id = process_mailing_id(
-            change_log_id
+            conn, change_log_id, topic_id, change_type
         )
 
-        list_of_users = crop_user_list(list_of_users, users_who_should_not_be_informed, new_record)
+        list_of_users = crop_user_list(conn, list_of_users, users_who_should_not_be_informed, new_record)
 
         message_for_pubsub = {'triggered_by_func_id': function_id, 'text': 'initiate notifs send out'}
         publish_to_pubsub(Topics.topic_to_send_notifications, message_for_pubsub)
@@ -1591,7 +656,7 @@ def iterate_over_all_users(conn, admins_list, new_record, list_of_users, functio
 
             # TODO: to delete msg_group at all ?
             # messages followed by coordinates (sendMessage + sendLocation) have same group
-            msg_group_id = get_the_new_group_id() if change_type in {0, 8} else None
+            msg_group_id = get_the_new_group_id(conn) if change_type in {0, 8} else None
             # not None for new_search, field_trips_new, field_trips_change,  coord_change
 
             # define if user received this message already
@@ -1599,7 +664,7 @@ def iterate_over_all_users(conn, admins_list, new_record, list_of_users, functio
 
             if this_record_was_processed_already:
                 this_user_was_notified = get_from_sql_if_was_notified_already(
-                    user.user_id, 'text', new_record.change_id
+                    conn, user.user_id, 'text', new_record.change_id
                 )
 
                 logging.info(f'this user was notified already {user.user_id}, {this_user_was_notified}')
@@ -1628,6 +693,7 @@ def iterate_over_all_users(conn, admins_list, new_record, list_of_users, functio
 
                 # record into SQL table notif_by_user
                 save_to_sql_notif_by_user(
+                    conn,
                     mailing_id,
                     user.user_id,
                     message,
@@ -1649,7 +715,7 @@ def iterate_over_all_users(conn, admins_list, new_record, list_of_users, functio
 
                     # record into SQL table notif_by_user (not text, but coords only)
                     save_to_sql_notif_by_user(
-                        mailing_id, user.user_id, None, None, 'coords', message_params, msg_group_id, change_log_id
+                        conn,mailing_id, user.user_id, None, None, 'coords', message_params, msg_group_id, change_log_id
                     )
                 if change_type == 8:
                     try:
@@ -1663,6 +729,7 @@ def iterate_over_all_users(conn, admins_list, new_record, list_of_users, functio
                                 new_lon = re.search(r'(?<=\D)[\d.]{2,12}$', both_coordinates).group()
                                 message_params = {'latitude': new_lat, 'longitude': new_lon}
                                 save_to_sql_notif_by_user(
+                                    conn,
                                     mailing_id,
                                     user.user_id,
                                     None,
