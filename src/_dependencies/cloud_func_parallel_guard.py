@@ -76,7 +76,7 @@ def check_and_save_event_id(
     context,
     event: str,
     function_id: int,
-    list_of_change_log_ids: list[str],
+    list_of_change_log_ids: list[int] | None,
     triggered_by_func_id: int,
     func_name: str,
     interval: int,
@@ -103,5 +103,5 @@ def check_and_save_event_id(
 
     # if this functions is triggered in the very end of the Google Cloud Function execution
     elif event == 'finish':
-        record_finish_of_function(event_id, list_of_change_log_ids)
+        record_finish_of_function(event_id, list_of_change_log_ids or [])
         return False

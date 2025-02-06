@@ -156,7 +156,10 @@ omit = ["*/tests/*"]
 mypy_path = "src"
 disallow_untyped_defs = false
 exclude = ["tests", "env", "venv"]
-files = ["src/send_notifications/"] # will add other folders lately
+files = [
+    "src/send_notifications/",
+    "src/compose_notifications/",
+] # will add other folders lately
 explicit_package_bases = true
 ignore_missing_imports = false
 install_types = true

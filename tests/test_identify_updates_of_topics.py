@@ -31,7 +31,7 @@ def common_patches():
         patch.object(main, 'requests_session', requests.Session()),
         patch.object(main, 'make_api_call', fake_api_call),
         # patch.object(main, 'parse_search_profile', Mock(return_value='foo')),
-        patch('compose_notifications.main.check_if_need_compose_more'),  # avoid recursion in tests
+        patch('compose_notifications.main.call_self_if_need_compose_more'),  # avoid recursion in tests
     ):
         yield
 
