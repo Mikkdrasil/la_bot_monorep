@@ -1,6 +1,6 @@
 import pytest
 
-from compose_notifications._utils.notif_common import define_dist_and_dir_to_search, get_coords_from_list
+from compose_notifications._utils.commons import define_dist_and_dir_to_search, get_coords_from_list
 
 
 def test_get_coords_from_list():

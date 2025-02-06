@@ -9,13 +9,13 @@ from sqlalchemy.engine.base import Connection
 from _dependencies.commons import Topics, get_app_config, publish_to_pubsub
 from _dependencies.misc import notify_admin
 
-from .message_composer import MessageComposer
-from .notif_common import (
+from .commons import (
     SEARCH_TOPIC_TYPES,
     ChangeType,
     LineInChangeLog,
     User,
 )
+from .message_composer import MessageComposer
 
 CLEANER_RE = re.compile('<.*?>')
 
@@ -353,8 +353,7 @@ class NotificationMaker:
         logging.info(f'The New Record {self.new_record.change_log_id} was marked as {record_status} in PSQL')
 
     def mark_new_comments_as_processed(self) -> None:
-        """mark in SQL table Comments all the comments that were processed at this step, basing on search_forum_id
-        TODO it seems that we don't use comments.notification_sent anywhere"""
+        """mark in SQL table Comments all the comments that were processed at this step, basing on search_forum_id"""
 
         # TODO – is it correct that we mark comments processes for any Comments for certain search? Looks
         #  like we can mark some comments which are not yet processed at all. Probably base on change_id? To be checked

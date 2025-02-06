@@ -4,7 +4,7 @@ import logging
 import sqlalchemy
 from sqlalchemy.engine.base import Connection
 
-from .notif_common import ChangeType, LineInChangeLog, SearchFollowingMode, User, define_dist_and_dir_to_search
+from .commons import ChangeType, LineInChangeLog, SearchFollowingMode, User, define_dist_and_dir_to_search
 
 
 class UsersListComposer:

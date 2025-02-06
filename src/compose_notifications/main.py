@@ -15,8 +15,8 @@ from _dependencies.misc import (
     process_pubsub_message_v2,
 )
 
+from ._utils.commons import LineInChangeLog, User
 from ._utils.log_record_composer import LogRecordComposer
-from ._utils.notif_common import LineInChangeLog, User
 from ._utils.notifications_maker import NotificationMaker
 from ._utils.users_list_composer import UserListFilter, UsersListComposer
 

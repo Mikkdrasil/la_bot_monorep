@@ -9,7 +9,7 @@ from sqlalchemy.engine.base import Connection
 
 from _dependencies.misc import age_writer, notify_admin
 
-from .notif_common import SEARCH_TOPIC_TYPES, WINDOW_FOR_NOTIFICATIONS_DAYS, ChangeType, Comment, LineInChangeLog
+from .commons import SEARCH_TOPIC_TYPES, WINDOW_FOR_NOTIFICATIONS_DAYS, ChangeType, Comment, LineInChangeLog
 
 
 class LogRecordComposer:

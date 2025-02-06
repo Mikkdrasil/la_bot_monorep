@@ -3,7 +3,7 @@ import datetime
 import logging
 import re
 
-from .notif_common import (
+from .commons import (
     COORD_FORMAT,
     COORD_PATTERN,
     SEARCH_TOPIC_TYPES,

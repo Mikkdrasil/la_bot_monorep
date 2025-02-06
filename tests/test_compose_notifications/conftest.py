@@ -5,7 +5,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 from _dependencies.commons import sqlalchemy_get_pool
-from compose_notifications._utils.notif_common import ChangeType, TopicType
+from compose_notifications._utils.commons import ChangeType, TopicType
 from tests.factories import db_factories, db_models
 
 
